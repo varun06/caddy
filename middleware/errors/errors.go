@@ -2,12 +2,14 @@
 package errors
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -15,8 +17,8 @@ import (
 
 // ErrorHandler handles HTTP errors (or errors from other middleware).
 type ErrorHandler struct {
-	Next       middleware.Handler
-	ErrorPages map[int]string // map of status code to filename
+	Next       middleware.Handler `json:"-"`
+	ErrorPages errorPagesMap      // map of status code to filename
 	LogFile    string
 	Log        *log.Logger
 }
@@ -112,3 +114,16 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 }
 
 const DefaultLogFilename = "error.log"
+
+// errorPagesMap is map of int (status code) to
+// string (path to error page) which can be
+// encoded as JSON.
+type errorPagesMap map[int]string
+
+func (e errorPagesMap) MarshalJSON() ([]byte, error) {
+	strmap := make(map[string]string)
+	for key, val := range e {
+		strmap[strconv.Itoa(key)] = val
+	}
+	return json.Marshal(strmap)
+}

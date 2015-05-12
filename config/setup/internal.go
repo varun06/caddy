@@ -13,7 +13,7 @@ func Internal(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return internal.Internal{Next: next, Paths: paths}
+		return &internal.Internal{Next: next, Paths: paths}
 	}, nil
 }
 

@@ -16,7 +16,7 @@ func Browse(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	browse := browse.Browse{
+	browse := &browse.Browse{
 		Root:    c.Root,
 		Configs: configs,
 	}

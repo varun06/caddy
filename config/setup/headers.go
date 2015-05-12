@@ -13,7 +13,7 @@ func Headers(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return headers.Headers{Next: next, Rules: rules}
+		return &headers.Headers{Next: next, Rules: rules}
 	}, nil
 }
 

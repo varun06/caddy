@@ -56,7 +56,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 // Templates is middleware to render templated files as the HTTP response.
 type Templates struct {
-	Next    middleware.Handler
+	Next    middleware.Handler `json:"-"`
 	Rules   []Rule
 	Root    string
 	FileSys http.FileSystem

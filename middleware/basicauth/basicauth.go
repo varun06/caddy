@@ -13,7 +13,7 @@ import (
 // security of HTTP Basic Auth is disputed. Use discretion when deciding
 // what to protect with BasicAuth.
 type BasicAuth struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Rules []Rule
 }
 
@@ -41,7 +41,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			isAuthenticated = true
 		}
 	}
-	
+
 	if hasAuth {
 		if !isAuthenticated {
 			w.Header().Set("WWW-Authenticate", "Basic")

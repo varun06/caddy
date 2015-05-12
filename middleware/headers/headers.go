@@ -13,7 +13,7 @@ import (
 // Headers is middleware that adds headers to the responses
 // for requests matching a certain path.
 type Headers struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Rules []Rule
 }
 

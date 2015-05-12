@@ -19,7 +19,7 @@ import (
 // It tries extensions in the order listed in Extensions.
 type Ext struct {
 	// Next handler in the chain
-	Next middleware.Handler
+	Next middleware.Handler `json:"-"`
 
 	// Path to ther root of the site
 	Root string

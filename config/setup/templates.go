@@ -14,7 +14,7 @@ func Templates(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	tmpls := templates.Templates{
+	tmpls := &templates.Templates{
 		Rules:   rules,
 		Root:    c.Root,
 		FileSys: http.Dir(c.Root),

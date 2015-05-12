@@ -18,9 +18,9 @@ func TestRewrite(t *testing.T) {
 	}
 
 	handler := mid(emptyNext)
-	myHandler, ok := handler.(rewrite.Rewrite)
+	myHandler, ok := handler.(*rewrite.Rewrite)
 	if !ok {
-		t.Fatalf("Expected handler to be type Rewrite, got: %#v", handler)
+		t.Fatalf("Expected handler to be type *rewrite.Rewrite, got: %#v", handler)
 	}
 
 	if !sameNext(myHandler.Next, emptyNext) {

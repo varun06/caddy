@@ -10,7 +10,7 @@ import (
 
 // Rewrite is middleware to rewrite request locations internally before being handled.
 type Rewrite struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Rules []Rule
 }
 

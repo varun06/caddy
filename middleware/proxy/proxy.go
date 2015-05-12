@@ -15,7 +15,7 @@ var errUnreachable = errors.New("Unreachable backend")
 
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
-	Next      middleware.Handler
+	Next      middleware.Handler `json:"-"`
 	Upstreams []Upstream
 }
 

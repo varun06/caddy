@@ -20,7 +20,7 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	md := markdown.Markdown{
+	md := &markdown.Markdown{
 		Root:       c.Root,
 		FileSys:    http.Dir(c.Root),
 		Configs:    mdconfigs,

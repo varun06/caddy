@@ -17,7 +17,7 @@ import (
 // specifies the Content-Type, otherwise some clients will assume
 // application/x-gzip and try to download a file.
 type Gzip struct {
-	Next middleware.Handler
+	Next middleware.Handler `json:"-"`
 }
 
 // ServeHTTP serves a gzipped response if the client supports it.

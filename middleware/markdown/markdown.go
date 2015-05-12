@@ -22,7 +22,7 @@ type Markdown struct {
 	FileSys http.FileSystem
 
 	// Next HTTP handler in the chain
-	Next middleware.Handler
+	Next middleware.Handler `json:"-"`
 
 	// The list of markdown configurations
 	Configs []Config

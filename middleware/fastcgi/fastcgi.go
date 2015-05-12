@@ -16,7 +16,7 @@ import (
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
-	Next    middleware.Handler
+	Next    middleware.Handler `json:"-"`
 	Rules   []Rule
 	Root    string
 	AbsRoot string // same as root, but absolute path

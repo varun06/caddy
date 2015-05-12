@@ -19,9 +19,9 @@ func TestBasicAuth(t *testing.T) {
 	}
 
 	handler := mid(emptyNext)
-	myHandler, ok := handler.(basicauth.BasicAuth)
+	myHandler, ok := handler.(*basicauth.BasicAuth)
 	if !ok {
-		t.Fatalf("Expected handler to be type BasicAuth, got: %#v", handler)
+		t.Fatalf("Expected handler to be type *basicauth.BasicAuth, got: %#v", handler)
 	}
 
 	if !sameNext(myHandler.Next, emptyNext) {

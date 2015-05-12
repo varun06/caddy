@@ -13,7 +13,7 @@ func Rewrite(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return rewrite.Rewrite{Next: next, Rules: rewrites}
+		return &rewrite.Rewrite{Next: next, Rules: rewrites}
 	}, nil
 }
 

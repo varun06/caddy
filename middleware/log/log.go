@@ -9,7 +9,7 @@ import (
 )
 
 type Logger struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Rules []LogRule
 }
 

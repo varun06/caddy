@@ -18,9 +18,9 @@ func TestGzip(t *testing.T) {
 	}
 
 	handler := mid(emptyNext)
-	myHandler, ok := handler.(gzip.Gzip)
+	myHandler, ok := handler.(*gzip.Gzip)
 	if !ok {
-		t.Fatalf("Expected handler to be type Gzip, got: %#v", handler)
+		t.Fatalf("Expected handler to be type *gzip.Gzip, got: %#v", handler)
 	}
 
 	if !sameNext(myHandler.Next, emptyNext) {

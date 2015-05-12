@@ -12,7 +12,7 @@ func BasicAuth(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	basic := basicauth.BasicAuth{Rules: rules}
+	basic := &basicauth.BasicAuth{Rules: rules}
 
 	return func(next middleware.Handler) middleware.Handler {
 		basic.Next = next

@@ -38,7 +38,7 @@ func Log(c *Controller) (middleware.Middleware, error) {
 	})
 
 	return func(next middleware.Handler) middleware.Handler {
-		return caddylog.Logger{Next: next, Rules: rules}
+		return &caddylog.Logger{Next: next, Rules: rules}
 	}, nil
 }
 

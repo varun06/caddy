@@ -11,7 +11,7 @@ import (
 
 // Redirect is middleware to respond with HTTP redirects
 type Redirect struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Rules []Rule
 }
 

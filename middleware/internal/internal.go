@@ -12,7 +12,7 @@ import (
 // Internal middleware protects internal locations from external requests -
 // but allows access from the inside by using a special HTTP header.
 type Internal struct {
-	Next  middleware.Handler
+	Next  middleware.Handler `json:"-"`
 	Paths []string
 }
 

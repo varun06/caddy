@@ -72,6 +72,6 @@ func WebSocket(c *Controller) (middleware.Middleware, error) {
 	websockets.ServerSoftware = c.AppName + "/" + c.AppVersion
 
 	return func(next middleware.Handler) middleware.Handler {
-		return websockets.WebSockets{Next: next, Sockets: websocks}
+		return &websockets.WebSockets{Next: next, Sockets: websocks}
 	}, nil
 }

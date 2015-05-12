@@ -22,7 +22,7 @@ func FastCGI(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return fastcgi.Handler{
+		return &fastcgi.Handler{
 			Next:            next,
 			Rules:           rules,
 			Root:            c.Root,

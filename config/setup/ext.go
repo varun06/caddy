@@ -17,7 +17,7 @@ func Ext(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return extensions.Ext{
+		return &extensions.Ext{
 			Next:       next,
 			Extensions: exts,
 			Root:       root,

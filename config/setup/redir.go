@@ -15,7 +15,7 @@ func Redir(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return redirect.Redirect{Next: next, Rules: rules}
+		return &redirect.Redirect{Next: next, Rules: rules}
 	}, nil
 }
 

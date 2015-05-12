@@ -16,7 +16,7 @@ type (
 	// websocket endpoints.
 	WebSockets struct {
 		// Next is the next HTTP handler in the chain for when the path doesn't match
-		Next middleware.Handler
+		Next middleware.Handler `json:"-"`
 
 		// Sockets holds all the web socket endpoint configurations
 		Sockets []Config

@@ -19,7 +19,7 @@ import (
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
-	Next    middleware.Handler
+	Next    middleware.Handler `json:"-"`
 	Root    string
 	Configs []Config
 }
