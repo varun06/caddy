@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/mholt/caddy/admin"
 	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/server"
@@ -85,6 +86,8 @@ func main() {
 		}
 	}
 
+	// TODO: ADMIN
+	admin.Serve("localhost:10000", server.TLSConfig{})
 
 	app.Wg.Wait()
 }
