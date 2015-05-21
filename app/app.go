@@ -15,6 +15,14 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
+const (
+	// Program name
+	Name = "Caddy"
+
+	// Program version
+	Version = "0.6.0"
+)
+
 var (
 	// Servers is a list of all the currently-listening servers
 	Servers []*server.Server

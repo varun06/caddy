@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config/parse"
 	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/middleware"
@@ -46,8 +47,8 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 			MiddlewareMap: make(map[*middleware.Middleware]string),
 			HandlerMap:    make(map[string]middleware.Handler),
 			ConfigFile:    filename,
-			AppName:       AppName,
-			AppVersion:    AppVersion,
+			AppName:       app.Name,
+			AppVersion:    app.Version,
 		}
 
 		// It is crucial that directives are executed in the proper order.
@@ -99,11 +100,24 @@ func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Conf
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
-		addr, err := net.ResolveTCPAddr("tcp", conf.Address())
+		newAddr, err := net.ResolveTCPAddr("tcp", conf.Address())
 		if err != nil {
 			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
 		}
-		addresses[addr] = append(addresses[addr], conf)
+
+		// Make sure to compare the string representation of the address,
+		// not the pointer, since a new *TCPAddr is created each time.
+		var existing bool
+		for addr := range addresses {
+			if addr.String() == newAddr.String() {
+				addresses[addr] = append(addresses[addr], conf)
+				existing = true
+				break
+			}
+		}
+		if !existing {
+			addresses[newAddr] = append(addresses[newAddr], conf)
+		}
 	}
 
 	// Don't allow HTTP and HTTPS to be served on the same address
@@ -155,7 +169,3 @@ var (
 	Host = DefaultHost
 	Port = DefaultPort
 )
-
-// The application should set these so that various middlewares
-// can access the proper information for their own needs.
-var AppName, AppVersion string
