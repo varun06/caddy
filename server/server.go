@@ -18,10 +18,11 @@ import (
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
-	HTTP2   bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	address string                 // the actual address for net.Listen to listen on
-	tls     bool                   // whether this server is serving all HTTPS hosts or not
-	vhosts  map[string]virtualHost // virtual hosts keyed by their address
+	*Graceful
+	HTTP2   bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	Address string                  // the actual address for net.Listen to listen on
+	TLS     bool                    // whether this server is serving all HTTPS hosts or not
+	Vhosts  map[string]*VirtualHost // virtual hosts keyed by their address
 }
 
 // New creates a new Server which will bind to addr and serve
@@ -29,45 +30,41 @@ type Server struct {
 // not start serving.
 func New(addr string, configs []Config, tls bool) (*Server, error) {
 	s := &Server{
-		address: addr,
-		tls:     tls,
-		vhosts:  make(map[string]virtualHost),
+		Graceful: NewGraceful(addr),
+		Address:  addr,
+		TLS:      tls,
+		Vhosts:   make(map[string]*VirtualHost),
 	}
 
 	for _, conf := range configs {
-		if _, exists := s.vhosts[conf.Host]; exists {
-			return nil, fmt.Errorf("Cannot serve %s - host already defined for address %s", conf.Address(), s.address)
+		if _, exists := s.Vhosts[conf.Host]; exists {
+			return nil, fmt.Errorf("Cannot serve %s - host already defined for address %s", conf.Address(), s.Address)
 		}
 
-		vh := virtualHost{config: conf}
+		vh := &VirtualHost{Config: conf}
 
 		// Build middleware stack
-		err := vh.buildStack()
+		err := vh.BuildStack()
 		if err != nil {
 			return nil, err
 		}
 
-		s.vhosts[conf.Host] = vh
+		s.Vhosts[conf.Host] = vh
 	}
 
 	return s, nil
 }
 
-// Serve starts the server. It blocks until the server quits.
-func (s *Server) Serve() error {
-	server := &http.Server{
-		Addr:    s.address,
-		Handler: s,
-	}
-
+// Start starts the server. It blocks until the server quits.
+func (s *Server) Start() error {
 	if s.HTTP2 {
 		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
-		http2.ConfigureServer(server, nil)
+		http2.ConfigureServer(s.Server, nil)
 	}
 
-	for _, vh := range s.vhosts {
+	for _, vh := range s.Vhosts {
 		// Execute startup functions now
-		for _, start := range vh.config.Startup {
+		for _, start := range vh.Config.Startup {
 			err := start()
 			if err != nil {
 				return err
@@ -75,12 +72,12 @@ func (s *Server) Serve() error {
 		}
 
 		// Execute shutdown commands on exit
-		if len(vh.config.Shutdown) > 0 {
+		if len(vh.Config.Shutdown) > 0 {
 			go func() {
 				interrupt := make(chan os.Signal, 1)
 				signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
 				<-interrupt
-				for _, shutdownFunc := range vh.config.Shutdown {
+				for _, shutdownFunc := range vh.Config.Shutdown {
 					err := shutdownFunc()
 					if err != nil {
 						log.Fatal(err)
@@ -91,14 +88,14 @@ func (s *Server) Serve() error {
 		}
 	}
 
-	if s.tls {
+	if s.TLS {
 		var tlsConfigs []TLSConfig
-		for _, vh := range s.vhosts {
-			tlsConfigs = append(tlsConfigs, vh.config.TLS)
+		for _, vh := range s.Vhosts {
+			tlsConfigs = append(tlsConfigs, vh.Config.TLS)
 		}
-		return ListenAndServeTLSWithSNI(server, tlsConfigs)
+		return ListenAndServeTLSWithSNI(s, tlsConfigs)
 	} else {
-		return server.ListenAndServe()
+		return s.ListenAndServe(s)
 	}
 }
 
@@ -106,7 +103,7 @@ func (s *Server) Serve() error {
 // multiple sites (different hostnames) to be served from the same address. This method is
 // adapted directly from the std lib's net/http ListenAndServeTLS function, which was
 // written by the Go Authors. It has been modified to support multiple certificate/key pairs.
-func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
+func ListenAndServeTLSWithSNI(srv *Server, tlsConfigs []TLSConfig) error {
 	addr := srv.Addr
 	if addr == "" {
 		addr = ":https"
@@ -146,7 +143,7 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 
 // ServeHTTP is the entry point for every request to the address that s
 // is bound to. It acts as a multiplexer for the requests hostname as
-// defined in the Host header so that the correct virtualhost
+// defined in the Host header so that the correct VirtualHost
 // (configuration and middleware stack) will handle the request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
@@ -164,16 +161,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
-	if _, ok := s.vhosts[host]; !ok {
-		if _, ok2 := s.vhosts["0.0.0.0"]; ok2 {
+	if _, ok := s.Vhosts[host]; !ok {
+		if _, ok2 := s.Vhosts["0.0.0.0"]; ok2 {
 			host = "0.0.0.0"
 		}
 	}
 
-	if vh, ok := s.vhosts[host]; ok {
+	if vh, ok := s.Vhosts[host]; ok {
 		w.Header().Set("Server", "Caddy")
 
-		status, _ := vh.stack.ServeHTTP(w, r)
+		status, _ := vh.Stack.ServeHTTP(w, r)
 
 		// Fallback error response in case error handling wasn't chained in
 		if status >= 400 {
@@ -182,6 +179,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "No such host at %s", s.address)
+		fmt.Fprintf(w, "No such host at %s", s.Address)
 	}
 }

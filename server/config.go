@@ -24,16 +24,22 @@ type Config struct {
 	TLS TLSConfig
 
 	// Middleware stack; map of path scope to middleware -- TODO: Support path scope?
-	Middleware map[string][]middleware.Middleware
+	Middleware map[string][]*middleware.Middleware `json:"-"`
+
+	// Map of middleware to directive name -- TODO: Support path scope?
+	MiddlewareMap map[*middleware.Middleware]string `json:"-"`
+
+	// Map of directive name to pointer to handler -- TODO: Support path scope?
+	HandlerMap map[string]middleware.Handler
 
 	// Functions (or methods) to execute at server start; these
 	// are executed before any parts of the server are configured,
 	// and the functions are blocking
-	Startup []func() error
+	Startup []func() error `json:"-"`
 
 	// Functions (or methods) to execute when the server quits;
 	// these are executed in response to SIGINT and are blocking
-	Shutdown []func() error
+	Shutdown []func() error `json:"-"`
 
 	// The path to the configuration file from which this was loaded
 	ConfigFile string
