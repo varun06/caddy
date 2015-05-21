@@ -54,7 +54,7 @@ func srvCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// range over the map.
 	for addr, cfgs := range bindings {
 		// Create a server that will build the virtual host
-		s, err := server.New(addr, cfgs, cfgs[0].TLS.Enabled)
+		s, err := server.New(addr.String(), cfgs, cfgs[0].TLS.Enabled)
 		if err != nil {
 			handleError(w, r, http.StatusBadRequest, err)
 			return
@@ -63,7 +63,7 @@ func srvCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		// See if there's a server that is already listening at the address
 		var addressUsed bool
 		for _, existingServer := range app.Servers {
-			if addr == existingServer.Address {
+			if addr.String() == existingServer.Address {
 				addressUsed = true
 
 				// Okay, now the virtual host address must not exist already

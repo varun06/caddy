@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/mholt/caddy/admin"
 	"github.com/mholt/caddy/app"
@@ -63,7 +64,7 @@ func main() {
 
 	// Start each server with its one or more configurations
 	for addr, configs := range addresses {
-		s, err := server.New(addr, configs, configs[0].TLS.Enabled)
+		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -83,6 +84,15 @@ func main() {
 			for _, config := range configs {
 				fmt.Println(config.Address())
 			}
+
+			for addr, configs := range addresses {
+				for _, conf := range configs {
+					if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+						fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
+							conf.Host, addr.IP.String())
+					}
+				}
+			}
 		}
 	}
 
@@ -90,6 +100,10 @@ func main() {
 	admin.Serve("localhost:10000", server.TLSConfig{})
 
 	app.Wg.Wait()
+}
+
+func isLocalhost(s string) bool {
+	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
 }
 
 // loadConfigs loads configuration from a file or stdin (piped).

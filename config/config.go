@@ -94,8 +94,8 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 // same address as a plaintext HTTP listener. The return value is a map of
 // bind address to list of configs that would become VirtualHosts on that
 // server.
-func ArrangeBindings(allConfigs []server.Config) (map[string][]server.Config, error) {
-	addresses := make(map[string][]server.Config)
+func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
+	addresses := make(map[*net.TCPAddr][]server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -103,7 +103,7 @@ func ArrangeBindings(allConfigs []server.Config) (map[string][]server.Config, er
 		if err != nil {
 			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
 		}
-		addresses[addr.String()] = append(addresses[addr.String()], conf)
+		addresses[addr] = append(addresses[addr], conf)
 	}
 
 	// Don't allow HTTP and HTTPS to be served on the same address
