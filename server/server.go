@@ -94,9 +94,9 @@ func (s *Server) Start() error {
 			tlsConfigs = append(tlsConfigs, vh.Config.TLS)
 		}
 		return ListenAndServeTLSWithSNI(s, tlsConfigs)
-	} else {
-		return s.ListenAndServe(s)
 	}
+
+	return s.ListenAndServe(s)
 }
 
 // ListenAndServeTLSWithSNI serves TLS with Server Name Indication (SNI) support, which allows
