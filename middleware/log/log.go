@@ -11,7 +11,7 @@ import (
 // Logger is a basic request logging middleware.
 type Logger struct {
 	Next  middleware.Handler `json:"-"`
-	Rules []LogRule
+	Rules []Rule
 }
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
