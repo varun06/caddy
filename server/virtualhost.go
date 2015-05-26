@@ -17,9 +17,8 @@ type VirtualHost struct {
 	Stack      middleware.Handler
 }
 
-// buildStack builds the server's middleware stack based
-// on its config. This method should be called last before
-// ListenAndServe begins.
+// BuildStack builds the server's middleware stack based
+// on its config.
 func (vh *VirtualHost) BuildStack() error {
 	vh.FileServer = FileServer(http.Dir(vh.Config.Root), []string{vh.Config.ConfigFile})
 
@@ -27,14 +26,14 @@ func (vh *VirtualHost) BuildStack() error {
 	// Partial support for multiple location contexts already
 	// exists at the parser and config levels, but until full
 	// support is implemented, this is all we do right here.
-	vh.Compile(vh.Config.Middleware["/"])
+	vh.compile(vh.Config.Middleware["/"])
 
 	return nil
 }
 
 // compile is an elegant alternative to nesting middleware function
 // calls like handler1(handler2(handler3(finalHandler))).
-func (vh *VirtualHost) Compile(layers []*middleware.Middleware) {
+func (vh *VirtualHost) compile(layers []*middleware.Middleware) {
 	vh.Stack = vh.FileServer // core app layer
 	for i := len(layers) - 1; i >= 0; i-- {
 		vh.Stack = (*layers[i])(vh.Stack)
@@ -44,5 +43,29 @@ func (vh *VirtualHost) Compile(layers []*middleware.Middleware) {
 			log.Fatal("No middleware pointer")
 		}
 		vh.Config.HandlerMap[dir] = vh.Stack
+	}
+}
+
+// Start means the vh is starting to be used, so it makes preparations
+// like running startup functions or anything else it needs to do.
+func (vh *VirtualHost) Start() error {
+	// Execute startup functions
+	for _, start := range vh.Config.Startup {
+		err := start()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Stop means that vh is being terminated, so the vh cleans up after itself.
+func (vh *VirtualHost) Stop() {
+	// Execute shutdown functions
+	for _, shutdownFunc := range vh.Config.Shutdown {
+		err := shutdownFunc()
+		if err != nil {
+			log.Println(err)
+		}
 	}
 }

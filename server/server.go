@@ -6,11 +6,8 @@ package server
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 
 	"github.com/bradfitz/http2"
 )
@@ -62,29 +59,10 @@ func (s *Server) Start() error {
 		http2.ConfigureServer(s.Server, nil)
 	}
 
+	// Run startup functions or make other preparations
 	for _, vh := range s.Vhosts {
-		// Execute startup functions now
-		for _, start := range vh.Config.Startup {
-			err := start()
-			if err != nil {
-				return err
-			}
-		}
-
-		// Execute shutdown commands on exit
-		if len(vh.Config.Shutdown) > 0 {
-			go func() {
-				interrupt := make(chan os.Signal, 1)
-				signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
-				<-interrupt
-				for _, shutdownFunc := range vh.Config.Shutdown {
-					err := shutdownFunc()
-					if err != nil {
-						log.Fatal(err)
-					}
-				}
-				os.Exit(0)
-			}()
+		if err := vh.Start(); err != nil {
+			return err
 		}
 	}
 

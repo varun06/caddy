@@ -15,6 +15,7 @@ type Graceful struct {
 	mu    sync.Mutex          // protects the map of idle connections
 }
 
+// NewGraceful makes a new Graceful server.
 func NewGraceful(addr string) *Graceful {
 	return &Graceful{
 		Server: &http.Server{Addr: addr},
@@ -23,6 +24,7 @@ func NewGraceful(addr string) *Graceful {
 	}
 }
 
+// Serve starts a server that can shutdown gracefully.
 func (g *Graceful) Serve(listener net.Listener) error {
 	// This goroutine waits for a stop signal
 	go func() {

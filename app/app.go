@@ -7,6 +7,8 @@ package app
 
 import (
 	"errors"
+	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
@@ -73,4 +75,22 @@ func SetCPU(cpu string) error {
 
 	runtime.GOMAXPROCS(numCPU)
 	return nil
+}
+
+func init() {
+	// Shut down all servers gracefully when the process is killed
+	go func() {
+		interrupt := make(chan os.Signal, 1)
+		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
+		<-interrupt
+
+		for _, s := range Servers {
+			for _, vh := range s.Vhosts {
+				vh.Stop()
+			}
+			s.Stop()
+		}
+
+		os.Exit(0)
+	}()
 }
