@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -35,6 +37,7 @@ func (g *Graceful) Serve(listener net.Listener) error {
 	}()
 
 	g.ConnState = func(conn net.Conn, state http.ConnState) {
+		fmt.Println(conn, state)
 		switch state {
 		case http.StateNew:
 			g.wg.Add(1)
@@ -45,8 +48,10 @@ func (g *Graceful) Serve(listener net.Listener) error {
 		case http.StateIdle:
 			select {
 			case <-g.stop:
+				fmt.Println("Closing")
 				conn.Close()
 			default:
+				fmt.Println("Saving conn")
 				g.mu.Lock()
 				g.conns[conn.LocalAddr().String()] = conn
 				g.mu.Unlock()
@@ -85,21 +90,38 @@ func (g *Graceful) ListenAndServe(handler http.Handler) error {
 }
 
 // ListenAndServeTLS creates a TLS listener and starts serving.
-// It blocks until g is stopped.
-func (g *Graceful) ListenAndServeTLS(handler http.Handler) error {
+// It blocks until g is stopped. It is directly adapted from net/http.
+func (g *Graceful) ListenAndServeTLS(handler http.Handler, certFile, keyFile string) error {
 	g.Server.Handler = handler
 
 	addr := g.Addr
 	if addr == "" {
-		addr = ":http"
+		addr = ":https"
+	}
+	config := &tls.Config{}
+	if g.TLSConfig != nil {
+		*config = *g.TLSConfig
+	}
+	if config.NextProtos == nil {
+		config.NextProtos = []string{"http/1.1"}
 	}
 
-	listener, err := net.Listen("tcp", addr)
+	var err error
+	config.Certificates = make([]tls.Certificate, 1)
+	config.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return err
 	}
 
-	return g.Serve(listener)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	// TODO... ??
+	//tlsListener := tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, config)
+	tlsListener := tls.NewListener(ln, config)
+	return g.Serve(tlsListener)
 }
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
