@@ -72,8 +72,9 @@ func srvCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 					return
 				}
 
-				// TODO: Run startup functions and do other startup tasks...
-				existingServer.Vhosts[cfgs[0].Host] = s.Vhosts[cfgs[0].Host]
+				vh := s.Vhosts[cfgs[0].Host]
+				vh.Start()
+				existingServer.Vhosts[cfgs[0].Host] = vh
 				break
 			}
 		}

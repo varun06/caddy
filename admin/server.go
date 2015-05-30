@@ -14,6 +14,7 @@ import (
 
 var router = httprouter.New()
 
+// Serve starts the admin server. It blocks indefinitely.
 func Serve(address string, tls server.TLSConfig) {
 	if tls.Enabled {
 		http.ListenAndServeTLS(address, tls.Certificate, tls.Key, router)
@@ -32,6 +33,7 @@ func auth(h httprouter.Handle) httprouter.Handle {
 	}
 }
 
+// handleError handles errors during API requests
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error) {
 	if err != nil {
 		log.Println(err)
