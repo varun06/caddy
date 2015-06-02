@@ -33,6 +33,10 @@ var initMutex = sync.Mutex{}
 // Logger is used to log errors; if nil, the default log.Logger is used.
 var Logger *log.Logger
 
+// Services holds all git pulling services and provides the function to
+// stop them.
+var Services = &services{}
+
 // logger is an helper function to retrieve the available logger
 func logger() *log.Logger {
 	if Logger == nil {
@@ -62,8 +66,9 @@ type Repo struct {
 func (r *Repo) Pull() error {
 	r.Lock()
 	defer r.Unlock()
-	// if it is less than interval since last pull, return
-	if time.Since(r.lastPull) <= r.Interval {
+
+	// prevent a pull if the last one was less than 5 seconds ago
+	if gos.TimeSince(r.lastPull) < 5*time.Second {
 		return nil
 	}
 

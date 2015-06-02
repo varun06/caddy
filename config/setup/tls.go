@@ -3,7 +3,6 @@ package setup
 import (
 	"crypto/tls"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -54,17 +53,13 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
-			case "cache":
-				if !c.NextArg() {
+			case "clients":
+				c.TLS.ClientCerts = c.RemainingArgs()
+				if len(c.TLS.ClientCerts) == 0 {
 					return nil, c.ArgErr()
 				}
-				size, err := strconv.Atoi(c.Val())
-				if err != nil {
-					return nil, c.Errf("Cache parameter must be a number '%s': %v", c.Val(), err)
-				}
-				c.TLS.CacheSize = size
 			default:
-				return nil, c.Errf("Unknown keyword '%s'")
+				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
 		}
 	}
@@ -85,11 +80,6 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		c.TLS.ProtocolMaxVersion = tls.VersionTLS12
 	}
 
-	//If no cachesize provided, set default to 64
-	if c.TLS.CacheSize <= 0 {
-		c.TLS.CacheSize = 64
-	}
-
 	// Prefer server cipher suites
 	c.TLS.PreferServerCipherSuites = true
 
@@ -97,7 +87,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 }
 
 // Map of supported protocols
-// SSLv3 will be not supported in next release
+// SSLv3 will be not supported in future release
 // HTTP/2 only supports TLS 1.2 and higher
 var supportedProtocols = map[string]uint16{
 	"ssl3.0": tls.VersionSSL30,
