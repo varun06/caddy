@@ -63,6 +63,8 @@ type (
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return f(w, r)
 }
+func (f HandlerFunc) GetNext() Handler  { return nil }
+func (f HandlerFunc) SetNext(h Handler) {}
 
 // IndexFile looks for a file in /root/fpath/indexFile for each string
 // in indexFiles. If an index file is found, it returns the root-relative
