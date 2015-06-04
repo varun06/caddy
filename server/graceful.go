@@ -170,7 +170,9 @@ func (g *Graceful) Serve(listener net.Listener) error {
 // timeout given when constructing the server, as this is an explicit
 // command to stop the server.
 func (g *Graceful) Stop(timeout time.Duration) {
+	g.Lock()
 	g.Timeout = timeout
+	g.Unlock()
 	interrupt := g.interruptChan()
 	interrupt <- syscall.SIGINT
 }
@@ -233,6 +235,9 @@ func (g *Graceful) handleInterrupt(interrupt chan os.Signal, listener net.Listen
 }
 
 func (g *Graceful) shutdown(shutdown chan chan struct{}, kill chan struct{}) {
+	g.Lock()
+	defer g.Unlock()
+
 	// Request done notification
 	done := make(chan struct{})
 	shutdown <- done
@@ -246,12 +251,11 @@ func (g *Graceful) shutdown(shutdown chan chan struct{}, kill chan struct{}) {
 	} else {
 		<-done
 	}
+
 	// Close the stopChan to wake up any blocked goroutines.
-	g.Lock()
 	if g.stopChan != nil {
 		close(g.stopChan)
 	}
-	g.Unlock()
 }
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
