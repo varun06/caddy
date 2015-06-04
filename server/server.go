@@ -29,10 +29,19 @@ type Server struct {
 // not start serving.
 func New(addr string, configs []Config, tls bool) (*Server, error) {
 	s := &Server{
-		Graceful: NewGraceful(addr),
-		Address:  addr,
-		TLS:      tls,
-		Vhosts:   make(map[string]*VirtualHost),
+		Address: addr,
+		TLS:     tls,
+		Vhosts:  make(map[string]*VirtualHost),
+	}
+
+	// Our server is its own handler
+	s.Graceful = NewGraceful(addr, s)
+
+	// When server shuts down, make sure each virtualhost cleans up.
+	s.Graceful.ShutdownCallback = func() {
+		for _, vh := range s.Vhosts {
+			vh.Stop()
+		}
 	}
 
 	for _, conf := range configs {
@@ -76,7 +85,7 @@ func (s *Server) Start() error {
 		return ListenAndServeTLSWithSNI(s, tlsConfigs)
 	}
 
-	return s.ListenAndServe(s)
+	return s.ListenAndServe()
 }
 
 // ListenAndServeTLSWithSNI serves TLS with Server Name Indication (SNI) support, which allows
@@ -122,11 +131,11 @@ func ListenAndServeTLSWithSNI(srv *Server, tlsConfigs []TLSConfig) error {
 	}
 
 	// Create listener and we're on our way
-	conn, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	tlsListener := tls.NewListener(conn, config)
+	tlsListener := tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, config)
 
 	return srv.Serve(tlsListener)
 }

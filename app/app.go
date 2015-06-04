@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mholt/caddy/server"
 )
@@ -80,17 +81,12 @@ func SetCPU(cpu string) error {
 func init() {
 	// Shut down all servers gracefully when the process is killed
 	go func() {
-		interrupt := make(chan os.Signal, 1)
+		interrupt := make(chan os.Signal)
 		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
 		<-interrupt
 
 		for _, s := range Servers {
-			for _, vh := range s.Vhosts {
-				vh.Stop()
-			}
-			s.Stop()
+			s.Stop(3 * time.Second)
 		}
-
-		os.Exit(0)
 	}()
 }
