@@ -13,8 +13,8 @@ import (
 // virtualHost allows us to do.
 type VirtualHost struct {
 	Config     Config
-	FileServer middleware.Handler
-	Stack      middleware.Handler
+	FileServer middleware.Handler `json:"-"`
+	Stack      middleware.Handler `json:"-"`
 }
 
 // BuildStack builds the server's middleware stack based

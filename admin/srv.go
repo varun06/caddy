@@ -1,11 +1,10 @@
 package admin
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
+	"fmt"
+	"log"
+	"net"
 	"net/http"
-	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -13,86 +12,79 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-func init() {
-	router.GET("/:addr", auth(srvInfo))
-	router.POST("/:addr", auth(srvCreate))
-	router.DELETE("/:addr", auth(srvStop))
-}
+var router = httprouter.New()
 
-func srvInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	vh := virtualHost(p.ByName("addr"))
-	if vh == nil {
-		handleError(w, r, http.StatusNotFound, nil)
-		return
-	}
-	if err := json.NewEncoder(w).Encode(vh.Config); err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
+// Serve starts the admin server. It blocks indefinitely.
+func Serve(address string, tls server.TLSConfig) {
+	if tls.Enabled {
+		http.ListenAndServeTLS(address, tls.Certificate, tls.Key, router)
+	} else {
+		http.ListenAndServe(address, router)
 	}
 }
 
-func srvCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// Parse the configuration
-	configHead := strings.NewReader(p.ByName("addr") + "\n")
-	configs, err := config.Load("HTTP_POST", io.MultiReader(configHead, r.Body))
+// auth is a middleware layer that authenticates a request to the server
+// management API
+func auth(h httprouter.Handle) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		// TODO: Authenticate
+		w.Header().Set("X-Temp-Auth", "true")
+		h(w, r, p)
+	}
+}
+
+// handleError handles errors during API requests
+func handleError(w http.ResponseWriter, r *http.Request, status int, err error) {
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, err)
-		return
+		log.Println(err)
 	}
-
-	// Arrange it by bind address (resolve hostname)
-	bindings, err := config.ArrangeBindings(configs)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
-	// There should only be one binding and one config,
-	// but we don't know what the bind address is, so we
-	// range over the map.
-	for addr, cfgs := range bindings {
-		// Create a server that will build the virtual host
-		s, err := server.New(addr.String(), cfgs, cfgs[0].TLS.Enabled)
-		if err != nil {
-			handleError(w, r, http.StatusBadRequest, err)
-			return
-		}
-
-		// See if there's a server that is already listening at the address
-		var addressUsed bool
-		for _, existingServer := range app.Servers {
-			if addr.String() == existingServer.Address {
-				addressUsed = true
-
-				// Okay, now the virtual host address must not exist already
-				if _, vhostExists := existingServer.Vhosts[cfgs[0].Host]; vhostExists {
-					handleError(w, r, http.StatusBadRequest, errors.New("Server already listening at "+p.ByName("addr")))
-					return
-				}
-
-				vh := s.Vhosts[cfgs[0].Host]
-				vh.Start()
-				existingServer.Vhosts[cfgs[0].Host] = vh
-				break
-			}
-		}
-
-		if !addressUsed {
-			app.Servers = append(app.Servers, s)
-			app.Wg.Add(1)
-			go func() {
-				s.Start()
-				// TODO: Error handling here? Maybe use a channel?
-			}()
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-	// TODO: Response body?
+	w.WriteHeader(status)
+	// TODO: This'll need to be JSON or something
+	// NOTE/SUGGESTION: If HTTP status code is in the 400s, write error text to client?
+	fmt.Fprintf(w, "%d %s\n", status, http.StatusText(status))
 }
 
-func srvStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// TODO
+// virtualHost gets only the VirtualHost only of the address
+// addr. If nil, the address was not found.
+func virtualHost(addr string) *server.VirtualHost {
+	_, vh := serverAndVirtualHost(addr)
+	return vh
+}
+
+// serverAndVirtualHost gets the server and VirtualHost of the
+// address addr. If either value is nil, the address could not
+// be found in the list of servers.
+func serverAndVirtualHost(addr string) (*server.Server, *server.VirtualHost) {
+	// The addr passed in may contain a host and port, but the
+	// server only arranges virtualhosts by host, not both, so
+	// we have to split these to make sure we got the right port.
+	return getServerAndVirtualHost(safeSplitHostPort(addr))
+}
+
+// serverAndVirtualHost gets the server and VirtualHost by the
+// host and port information. If either value is nil, the host
+// and port combination could not be found.
+func getServerAndVirtualHost(host, port string) (*server.Server, *server.VirtualHost) {
+	for _, s := range app.Servers {
+		_, sPort, err := net.SplitHostPort(s.Address)
+		if err != nil || sPort != port {
+			continue
+		}
+		if vh, ok := s.Vhosts[host]; ok {
+			return s, vh
+		}
+	}
+	return nil, nil
+}
+
+// safeSplitHostPort splits the host and port. It assumes
+// that if there is an error splitting, the entire string
+// s must be the host, and we resort to the default port.
+func safeSplitHostPort(s string) (string, string) {
+	host, port, err := net.SplitHostPort(s)
+	if err != nil {
+		host = s
+		port = config.DefaultPort
+	}
+	return host, port
 }

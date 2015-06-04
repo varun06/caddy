@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -74,11 +75,17 @@ func main() {
 			defer app.Wg.Done()
 			err := s.Start()
 			if err != nil {
-				log.Fatal(err) // kill whole process to avoid a half-alive zombie server
+				// Graceful shutdowns will return an error of type net.OpError with "accept"
+				// in the Op field. We can ignore those - the rest we should deal with.
+				if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
+					log.Fatal(err) // kill whole process to avoid a half-alive zombie server
+				}
 			}
 		}(s)
 
+		app.ServersMutex.Lock()
 		app.Servers = append(app.Servers, s)
+		app.ServersMutex.Unlock()
 	}
 
 	// Show initialization output
@@ -104,6 +111,9 @@ func main() {
 	}
 
 	// TODO: ADMIN
+	// TODO: Wg.Add(1) for admin.Serve()? (Maybe in the future, it could be terminated remotely)
+	// TODO: Currently, this serve doesn't get killed by Ctrl+C because our interrupt handler
+	// doesn't stop the process. We need to fix this.
 	admin.Serve("localhost:10000", server.TLSConfig{})
 
 	// Wait for all listeners to stop

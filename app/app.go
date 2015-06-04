@@ -24,6 +24,10 @@ const (
 
 	// Version is the program version
 	Version = "0.7.1"
+
+	// ShutdownCutoff is the duration after a shutdown has been
+	// initialized that connections are allowed to remain open
+	ShutdownCutoff = 3 * time.Second
 )
 
 var (
@@ -85,8 +89,10 @@ func init() {
 		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
 		<-interrupt
 
+		ServersMutex.Lock()
 		for _, s := range Servers {
-			s.Stop(3 * time.Second)
+			s.Stop(ShutdownCutoff)
 		}
+		ServersMutex.Unlock()
 	}()
 }

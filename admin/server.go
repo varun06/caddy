@@ -1,10 +1,11 @@
 package admin
 
 import (
-	"fmt"
-	"log"
-	"net"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -12,60 +13,118 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-var router = httprouter.New()
+func init() {
+	router.GET("/", auth(serverList))
+	router.GET("/:addr", auth(serverInfo))
+	router.POST("/:addr", auth(serverCreate))
+	router.DELETE("/:addr", auth(serverStop))
+}
 
-// Serve starts the admin server. It blocks indefinitely.
-func Serve(address string, tls server.TLSConfig) {
-	if tls.Enabled {
-		http.ListenAndServeTLS(address, tls.Certificate, tls.Key, router)
-	} else {
-		http.ListenAndServe(address, router)
+// serverList shows the list of servers and their information
+func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	if err := json.NewEncoder(w).Encode(app.Servers); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err)
 	}
 }
 
-// auth is a middleware layer that authenticates a request to the server
-// management API
-func auth(h httprouter.Handle) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		// TODO: Authenticate
-		w.Header().Set("X-Temp-Auth", "true")
-		h(w, r, p)
+// serverInfo returns information about a specific server/virtualhost
+func serverInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	vh := virtualHost(p.ByName("addr"))
+	if vh == nil {
+		handleError(w, r, http.StatusNotFound, nil)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(vh.Config); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err)
 	}
 }
 
-// handleError handles errors during API requests
-func handleError(w http.ResponseWriter, r *http.Request, status int, err error) {
+// serverCreate spins up a new server (or virtualhost)
+func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	// Parse the configuration
+	configHead := strings.NewReader(p.ByName("addr") + "\n")
+	configs, err := config.Load("HTTP_POST", io.MultiReader(configHead, r.Body))
 	if err != nil {
-		log.Println(err)
+		handleError(w, r, http.StatusBadRequest, err)
+		return
 	}
-	w.WriteHeader(status)
-	// TODO: This'll need to be JSON or something
-	// NOTE/SUGGESTION: If HTTP status code is in the 400s, write error text to client?
-	fmt.Fprintf(w, "%d %s\n", status, http.StatusText(status))
+
+	// Arrange it by bind address (resolve hostname)
+	bindings, err := config.ArrangeBindings(configs)
+	if err != nil {
+		handleError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	// There should only be one binding and one config,
+	// but we don't know what the bind address is, so we
+	// range over the map.
+	for addr, cfgs := range bindings {
+		// Create a server that will build the virtual host
+		s, err := server.New(addr.String(), cfgs, cfgs[0].TLS.Enabled)
+		if err != nil {
+			handleError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		// See if there's a server that is already listening at the address
+		var addressUsed bool
+		for _, existingServer := range app.Servers {
+			if addr.String() == existingServer.Address {
+				addressUsed = true
+
+				// Okay, now the virtual host address must not exist already
+				if _, vhostExists := existingServer.Vhosts[cfgs[0].Host]; vhostExists {
+					handleError(w, r, http.StatusBadRequest, errors.New("Server already listening at "+p.ByName("addr")))
+					return
+				}
+
+				vh := s.Vhosts[cfgs[0].Host]
+				vh.Start()
+				existingServer.Vhosts[cfgs[0].Host] = vh
+				break
+			}
+		}
+
+		if !addressUsed {
+			app.Servers = append(app.Servers, s)
+			app.Wg.Add(1)
+			go func() {
+				defer app.Wg.Done()
+				s.Start() // TODO: Error handling here? Maybe use a channel?
+				// TODO - Note that main.go does something similar but has the luxury
+				// of shutting down the whole server because it's during startup.
+				// What do we do in the case of errors here?
+			}()
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	// TODO: Response body?
 }
 
-// virtualHost gets the virtual host from the list of servers
-// which has address addr. If the return value is nil, the
-// address does not exist (not found).
-func virtualHost(addr string) *server.VirtualHost {
-	// The addr passed in may contain a host and port, but the
-	// server only arranges virtualhosts by host, not both, so
-	// we have to split these to make sure we got the right port.
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-		port = config.DefaultPort
+// serverStop stops a running server (or virtualhost) with a graceful shutdown.
+func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	host, port := safeSplitHostPort(p.ByName("addr"))
+	srv, vh := getServerAndVirtualHost(host, port)
+	if srv == nil || vh == nil {
+		handleError(w, r, http.StatusNotFound, nil)
+		return
 	}
 
-	for _, s := range app.Servers {
-		_, sPort, err := net.SplitHostPort(s.Address)
-		if err != nil || sPort != port {
-			continue
-		}
-		if vh, ok := s.Vhosts[host]; ok {
-			return vh
-		}
+	vh.Stop()
+
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	delete(srv.Vhosts, host)
+	if len(srv.Vhosts) == 0 {
+		srv.Stop(app.ShutdownCutoff)
 	}
 
-	return nil
+	// TODO: write a proper response
+	w.WriteHeader(http.StatusOK)
 }

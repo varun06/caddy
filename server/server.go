@@ -17,11 +17,11 @@ import (
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
-	*Graceful
-	HTTP2   bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	Address string                  // the actual address for net.Listen to listen on
-	TLS     bool                    // whether this server is serving all HTTPS hosts or not
-	Vhosts  map[string]*VirtualHost // virtual hosts keyed by their address
+	*Graceful `json:"-"`
+	HTTP2     bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	Address   string                  // the actual address for net.Listen to listen on
+	TLS       bool                    // whether this server is serving all HTTPS hosts or not
+	Vhosts    map[string]*VirtualHost // virtual hosts keyed by their address
 }
 
 // New creates a new Server which will bind to addr and serve
