@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -9,6 +10,8 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config"
+	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/server"
 )
 
@@ -89,4 +92,98 @@ func safeSplitHostPort(s string) (string, string) {
 		port = config.DefaultPort
 	}
 	return host, port
+}
+
+// createMiddleware creates a new middleware using the input from the request r and the address
+// found in p. The directive and setup function that are passed in will be used to create
+// the middleware layer and chain it in at the proper place. It returns an HTTP status code
+// and server-side error, if any. Note that the HTTP status code may still be an error code
+// even though the error is nil. To make it easier to determine if there was an error, the third
+// return value will be false if there was an error (true if all OK).
+func createMiddleware(r *http.Request, p httprouter.Params, directive string, setupFunc config.SetupFunc) (int, error, bool) {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	// Get the virtualHost we will add the middleware to
+	_, vh, ok := serverAndVirtualHost(p.ByName("addr"))
+	if !ok {
+		return http.StatusNotFound, nil, false
+	}
+
+	// Make sure the middleware doesn't already exist
+	if _, ok := vh.Config.HandlerMap[directive]; ok {
+		return http.StatusConflict, errors.New("Resource already exists"), false
+	}
+
+	// Get ready to parse the configuration
+	c := &setup.Controller{
+		Config:    &vh.Config,
+		Dispenser: parse.NewDispenser("HTTP_POST", r.Body),
+	}
+
+	// Parse the input, which creates our middleware layer
+	midware, err := setupFunc(c)
+	if err != nil {
+		return http.StatusBadRequest, err, false
+	}
+
+	vh.Config.MiddlewareMap[&midware] = directive
+
+	// Chain our new middleware in at the right place
+	_, handlerBefore := config.HandlerBefore(directive, vh.Config.HandlerMap)
+	if handlerBefore == nil {
+		// This is the first middleware handler!
+		vh.Stack = midware(vh.Stack)
+		vh.Config.HandlerMap[directive] = vh.Stack
+	} else {
+		// This is not the first middleware handler; splice it into the chain
+		newNext := handlerBefore.GetNext()
+		newHandler := midware(newNext)
+		handlerBefore.SetNext(newHandler)
+		vh.Config.HandlerMap[directive] = newHandler
+	}
+
+	return http.StatusOK, nil, true
+}
+
+// deleteMiddleware deletes a middleware from the chain/stack of the server
+// indicated by the parameter in p, and the directive name that gets passed in.
+// It returns a status code, server-side error (if any), and true if the action
+// was succesful (false otherwise).
+func deleteMiddleware(p httprouter.Params, directive string) (int, error, bool) {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	// Get the virtualHost we will remove the middleware from
+	_, vh, ok := serverAndVirtualHost(p.ByName("addr"))
+	if !ok {
+		return http.StatusNotFound, nil, false
+	}
+
+	// Get the handler being deleted
+	handler, ok := vh.Config.HandlerMap[directive]
+	if !ok {
+		return http.StatusNotFound, nil, false
+	}
+
+	// Get the handler before it so we can re-wire this part of the chain
+	_, handlerBefore := config.HandlerBefore(directive, vh.Config.HandlerMap)
+	next := handler.GetNext()
+
+	if handlerBefore == nil {
+		vh.Stack = next
+	} else {
+		handlerBefore.SetNext(next)
+	}
+
+	// Now that it's not in the chain anymore, delete all traces of this handler
+	for key, dir := range vh.Config.MiddlewareMap {
+		if dir == directive {
+			delete(vh.Config.MiddlewareMap, key)
+			break
+		}
+	}
+	delete(vh.Config.HandlerMap, directive)
+
+	return http.StatusOK, nil, true
 }

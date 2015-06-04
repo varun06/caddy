@@ -91,10 +91,10 @@ func HandlerBefore(directiveName string, handlers map[string]middleware.Handler)
 // directive ties together a directive name with its setup function.
 type directive struct {
 	name  string
-	setup setupFunc
+	setup SetupFunc
 }
 
 // A setup function takes a setup controller. Its return values may
 // both be nil. If middleware is not nil, it will be chained into
 // the HTTP handlers in the order specified in this package.
-type setupFunc func(c *setup.Controller) (middleware.Middleware, error)
+type SetupFunc func(c *setup.Controller) (middleware.Middleware, error)
