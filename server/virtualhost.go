@@ -40,7 +40,7 @@ func (vh *VirtualHost) compile(layers []*middleware.Middleware) {
 		dir, ok := vh.Config.MiddlewareMap[layers[i]]
 		if !ok {
 			// TODO
-			log.Fatal("No middleware pointer")
+			log.Fatalf("No middleware pointer for %s", dir)
 		}
 		vh.Config.HandlerMap[dir] = vh.Stack
 	}

@@ -47,18 +47,20 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error) 
 // virtualHost gets only the VirtualHost only of the address
 // addr. If nil, the address was not found.
 func virtualHost(addr string) *server.VirtualHost {
-	_, vh := serverAndVirtualHost(addr)
+	_, vh, _ := serverAndVirtualHost(addr)
 	return vh
 }
 
 // serverAndVirtualHost gets the server and VirtualHost of the
 // address addr. If either value is nil, the address could not
-// be found in the list of servers.
-func serverAndVirtualHost(addr string) (*server.Server, *server.VirtualHost) {
+// be found in the list of servers, in which case the last arg
+// will be false.
+func serverAndVirtualHost(addr string) (*server.Server, *server.VirtualHost, bool) {
 	// The addr passed in may contain a host and port, but the
 	// server only arranges virtualhosts by host, not both, so
 	// we have to split these to make sure we got the right port.
-	return getServerAndVirtualHost(safeSplitHostPort(addr))
+	srv, vh := getServerAndVirtualHost(safeSplitHostPort(addr))
+	return srv, vh, srv != nil && vh != nil
 }
 
 // serverAndVirtualHost gets the server and VirtualHost by the

@@ -102,7 +102,7 @@ func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		}
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusCreated)
 	// TODO: Response body?
 }
 

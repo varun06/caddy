@@ -68,6 +68,26 @@ var directiveOrder = []directive{
 	{"browse", setup.Browse},
 }
 
+// HandlerBefore traverses the directives in order and looks for the
+// one with the specified name in the map of handlers that is passed in.
+// It returns the name of the directive of the handler that occurs before
+// the directive in the given map, as well as the handler itself. If the
+// handler is nil, then no previous handler was found.
+func HandlerBefore(directiveName string, handlers map[string]middleware.Handler) (string, middleware.Handler) {
+	var prevHandler middleware.Handler
+	var prevDirName string
+	for _, dir := range directiveOrder {
+		if dir.name == directiveName {
+			return prevDirName, prevHandler
+		}
+		if handler, ok := handlers[dir.name]; ok {
+			prevHandler = handler
+			prevDirName = dir.name
+		}
+	}
+	return prevDirName, prevHandler
+}
+
 // directive ties together a directive name with its setup function.
 type directive struct {
 	name  string
