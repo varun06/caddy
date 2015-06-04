@@ -1,9 +1,10 @@
 package webhook
 
 import (
+	"net/http"
+
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/git"
-	"net/http"
 )
 
 // Middleware for handling web hooks of git providers
@@ -25,7 +26,7 @@ var handlers = []hookHandler{
 }
 
 // ServeHTTP implements the middlware.Handler interface.
-func (h WebHook) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (h *WebHook) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	if r.URL.Path == h.Repo.HookUrl {
 
@@ -41,3 +42,6 @@ func (h WebHook) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	return h.Next.ServeHTTP(w, r)
 }
+
+func (h *WebHook) GetNext() middleware.Handler     { return h.Next }
+func (h *WebHook) SetNext(next middleware.Handler) { h.Next = next }

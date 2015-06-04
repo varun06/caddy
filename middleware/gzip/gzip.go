@@ -21,7 +21,7 @@ type Gzip struct {
 }
 
 // ServeHTTP serves a gzipped response if the client supports it.
-func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (g *Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		return g.Next.ServeHTTP(w, r)
 	}
@@ -73,3 +73,6 @@ func (w gzipResponseWriter) Write(b []byte) (int, error) {
 	n, err := w.Writer.Write(b)
 	return n, err
 }
+
+func (g *Gzip) GetNext() middleware.Handler     { return g.Next }
+func (g *Gzip) SetNext(next middleware.Handler) { g.Next = next }

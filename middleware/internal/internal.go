@@ -26,7 +26,7 @@ func isInternalRedirect(w http.ResponseWriter) bool {
 }
 
 // ServeHTTP implements the middlware.Handler interface.
-func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (i *Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	// Internal location requested? -> Not found.
 	for _, prefix := range i.Paths {
@@ -57,6 +57,9 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 
 	return status, err
 }
+
+func (i *Internal) GetNext() middleware.Handler     { return i.Next }
+func (i *Internal) SetNext(next middleware.Handler) { i.Next = next }
 
 // internalResponseWriter wraps the underlying http.ResponseWriter and ignores
 // calls to Write and WriteHeader if the response should be redirected to an

@@ -36,14 +36,27 @@ type (
 	// response for a status code >= 400. When ANY handler writes to the
 	// response, it should return a status code < 400 to signal others to
 	// NOT write to the response again, which would be erroneous.
+	//
+	// This Handler type also must satisfy the Nexter interface, which is
+	// the ability to get and set the Next handler in the chain. This is
+	// necessary for middleware to be modified after being compiled.
 	Handler interface {
 		ServeHTTP(http.ResponseWriter, *http.Request) (int, error)
+		Nexter
 	}
 
 	// HandlerFunc is a convenience type like http.HandlerFunc, except
 	// ServeHTTP returns a status code and an error. See Handler
 	// documentation for more information.
 	HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
+
+	// Nexter is any type that can get and set the next middleware
+	// in the chain. It allows  the middleware stack to be treated
+	// like a singly-linked list.
+	Nexter interface {
+		GetNext() Handler
+		SetNext(Handler)
+	}
 )
 
 // ServeHTTP implements the Handler interface.

@@ -22,7 +22,7 @@ type Rewrite struct {
 }
 
 // ServeHTTP implements the middleware.Handler interface.
-func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (rw *Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rw.Rules {
 		if ok := rule.Rewrite(r); ok {
 			break
@@ -30,6 +30,9 @@ func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 	}
 	return rw.Next.ServeHTTP(w, r)
 }
+
+func (rw *Rewrite) GetNext() middleware.Handler     { return rw.Next }
+func (rw *Rewrite) SetNext(next middleware.Handler) { rw.Next = next }
 
 // Rule describes an internal location rewrite rule.
 type Rule interface {

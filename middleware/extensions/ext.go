@@ -22,14 +22,14 @@ type Ext struct {
 	Next middleware.Handler `json:"-"`
 
 	// Path to ther root of the site
-	Root string
+	Root string `json:"-"`
 
 	// List of extensions to try
 	Extensions []string
 }
 
 // ServeHTTP implements the middleware.Handler interface.
-func (e Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (e *Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	urlpath := strings.TrimSuffix(r.URL.Path, "/")
 	if path.Ext(urlpath) == "" {
 		for _, ext := range e.Extensions {
@@ -50,3 +50,6 @@ func resourceExists(root, path string) bool {
 	// but we don't handle any other kinds of errors anyway
 	return err == nil
 }
+
+func (e *Ext) GetNext() middleware.Handler     { return e.Next }
+func (e *Ext) SetNext(next middleware.Handler) { e.Next = next }

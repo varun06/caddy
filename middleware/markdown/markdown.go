@@ -32,7 +32,7 @@ type Markdown struct {
 }
 
 // IsIndexFile checks to see if a file is an index file
-func (md Markdown) IsIndexFile(file string) bool {
+func (md *Markdown) IsIndexFile(file string) bool {
 	for _, f := range md.IndexFiles {
 		if f == file {
 			return true
@@ -69,7 +69,7 @@ type Config struct {
 }
 
 // ServeHTTP implements the http.Handler interface.
-func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (md *Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, m := range md.Configs {
 		if !middleware.Path(r.URL.Path).Matches(m.PathScope) {
 			continue
@@ -133,3 +133,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	// Didn't qualify to serve as markdown; pass-thru
 	return md.Next.ServeHTTP(w, r)
 }
+
+func (md *Markdown) GetNext() middleware.Handler     { return md.Next }
+func (md *Markdown) SetNext(next middleware.Handler) { md.Next = next }

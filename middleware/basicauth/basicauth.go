@@ -19,7 +19,7 @@ type BasicAuth struct {
 }
 
 // ServeHTTP implements the middleware.Handler interface.
-func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (a *BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	var hasAuth bool
 	var isAuthenticated bool
@@ -58,6 +58,9 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	// Pass-thru when no paths match
 	return a.Next.ServeHTTP(w, r)
 }
+
+func (a *BasicAuth) GetNext() middleware.Handler     { return a.Next }
+func (a *BasicAuth) SetNext(next middleware.Handler) { a.Next = next }
 
 // Rule represents a BasicAuth rule. A username and password
 // combination protect the associated resources, which are

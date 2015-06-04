@@ -210,6 +210,9 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	return env, nil
 }
 
+func (h *Handler) GetNext() middleware.Handler     { return h.Next }
+func (h *Handler) SetNext(next middleware.Handler) { h.Next = next }
+
 // Rule represents a FastCGI handling rule.
 type Rule struct {
 	// The base path to match. Required.

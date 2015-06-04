@@ -73,7 +73,7 @@ var IndexPages = []string{
 }
 
 // ServeHTTP implements the middleware.Handler interface.
-func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (b *Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	filename := b.Root + r.URL.Path
 
 	info, err := os.Stat(filename)
@@ -181,3 +181,6 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Didn't qualify; pass-thru
 	return b.Next.ServeHTTP(w, r)
 }
+
+func (b *Browse) GetNext() middleware.Handler     { return b.Next }
+func (b *Browse) SetNext(next middleware.Handler) { b.Next = next }

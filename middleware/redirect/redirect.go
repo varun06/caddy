@@ -16,7 +16,7 @@ type Redirect struct {
 }
 
 // ServeHTTP implements the middleware.Handler interface.
-func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (rd *Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
 		if rule.From == "/" {
 			// Catchall redirect preserves path (TODO: Standardize/formalize this behavior)
@@ -30,6 +30,9 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 	return rd.Next.ServeHTTP(w, r)
 }
+
+func (rd *Redirect) GetNext() middleware.Handler     { return rd.Next }
+func (rd *Redirect) SetNext(next middleware.Handler) { rd.Next = next }
 
 // Rule describes an HTTP redirect rule.
 type Rule struct {

@@ -134,3 +134,6 @@ func redirect(w http.ResponseWriter, r *http.Request, newPath string) {
 	}
 	http.Redirect(w, r, newPath, http.StatusMovedPermanently)
 }
+
+func (fh *fileHandler) GetNext() middleware.Handler     { return nil }
+func (fh *fileHandler) SetNext(next middleware.Handler) {}

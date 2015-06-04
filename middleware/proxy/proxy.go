@@ -56,7 +56,7 @@ func (uh *UpstreamHost) Down() bool {
 }
 
 // ServeHTTP satisfies the middleware.Handler interface.
-func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	for _, upstream := range p.Upstreams {
 		if middleware.Path(r.URL.Path).Matches(upstream.From()) {
@@ -124,3 +124,6 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	return p.Next.ServeHTTP(w, r)
 }
+
+func (p *Proxy) GetNext() middleware.Handler     { return p.Next }
+func (p *Proxy) SetNext(next middleware.Handler) { p.Next = next }

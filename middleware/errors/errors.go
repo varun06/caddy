@@ -23,7 +23,7 @@ type ErrorHandler struct {
 	Log        *log.Logger
 }
 
-func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (h *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	defer h.recovery(w, r)
 
 	status, err := h.Next.ServeHTTP(w, r)
@@ -43,7 +43,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 // errorPage serves a static error page to w according to the status
 // code. If there is an error serving the error page, a plaintext error
 // message is written instead, and the extra error is logged.
-func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
+func (h *ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 	defaultBody := fmt.Sprintf("%d %s", code, http.StatusText(code))
 
 	// See if an error page for this status code was specified
@@ -77,7 +77,7 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 	http.Error(w, defaultBody, code)
 }
 
-func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
+func (h *ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 	rec := recover()
 	if rec == nil {
 		return
@@ -127,3 +127,6 @@ func (e errorPagesMap) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(strmap)
 }
+
+func (h *ErrorHandler) GetNext() middleware.Handler     { return h.Next }
+func (h *ErrorHandler) SetNext(next middleware.Handler) { h.Next = next }

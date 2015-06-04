@@ -33,7 +33,7 @@ type (
 )
 
 // ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
-func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (ws *WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, sockconfig := range ws.Sockets {
 		if middleware.Path(r.URL.Path).Matches(sockconfig.Path) {
 			socket := WebSocket{
@@ -48,6 +48,9 @@ func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 	// Didn't match a websocket path, so pass-thru
 	return ws.Next.ServeHTTP(w, r)
 }
+
+func (ws *WebSockets) GetNext() middleware.Handler     { return ws.Next }
+func (ws *WebSockets) SetNext(next middleware.Handler) { ws.Next = next }
 
 var (
 	// GatewayInterface is the dialect of CGI being used by the server

@@ -12,7 +12,7 @@ import (
 )
 
 // ServeHTTP implements the middleware.Handler interface.
-func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range t.Rules {
 		if !middleware.Path(r.URL.Path).Matches(rule.Path) {
 			continue
@@ -53,6 +53,9 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	return t.Next.ServeHTTP(w, r)
 }
+
+func (t *Templates) GetNext() middleware.Handler     { return t.Next }
+func (t *Templates) SetNext(next middleware.Handler) { t.Next = next }
 
 // Templates is middleware to render templated files as the HTTP response.
 type Templates struct {

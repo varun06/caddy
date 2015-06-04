@@ -14,7 +14,7 @@ type Logger struct {
 	Rules []Rule
 }
 
-func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (l *Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range l.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.PathScope) {
 			responseRecorder := middleware.NewResponseRecorder(w)
@@ -26,6 +26,9 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 	return l.Next.ServeHTTP(w, r)
 }
+
+func (l *Logger) GetNext() middleware.Handler     { return l.Next }
+func (l *Logger) SetNext(next middleware.Handler) { l.Next = next }
 
 // Rule configures the logging middleware.
 type Rule struct {

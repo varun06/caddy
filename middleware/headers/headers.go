@@ -19,7 +19,7 @@ type Headers struct {
 
 // ServeHTTP implements the middleware.Handler interface and serves requests,
 // setting headers on the response according to the configured rules.
-func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (h *Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.Path) {
 			for _, header := range rule.Headers {
@@ -33,6 +33,9 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	}
 	return h.Next.ServeHTTP(w, r)
 }
+
+func (h *Headers) GetNext() middleware.Handler     { return h.Next }
+func (h *Headers) SetNext(next middleware.Handler) { h.Next = next }
 
 type (
 	// Rule groups a slice of HTTP headers by a URL pattern.
