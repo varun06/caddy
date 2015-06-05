@@ -17,8 +17,8 @@ func init() {
 	router.DELETE("/:addr/ext", auth(extensionsDelete))
 
 	router.PUT("/:addr/ext/extensions", auth(extensionsSet))
-	router.POST("/:addr/ext/extensions/:ext", auth(extensionsAdd))
-	router.DELETE("/:addr/ext/extensions/:ext", auth(extensionsDel))
+	router.POST("/:addr/ext/extensions", auth(extensionsAdd))
+	router.DELETE("/:addr/ext/extensions", auth(extensionsRemove))
 }
 
 // extensionsGet serializes the ext middleware out to the client to view.
@@ -73,31 +73,52 @@ func extensionsSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 	w.WriteHeader(http.StatusOK)
 }
 
-// extensionsAdd adds a new extension.
+// extensionsAdd adds extensions.
+// Syntax:
+// [".ext1", ".ext2", ...]
 func extensionsAdd(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	ext := getExt(w, r, p)
 	if ext == nil {
 		return
 	}
+
+	var extList []string
+	err := json.NewDecoder(r.Body).Decode(&extList)
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
 	app.ServersMutex.Lock()
-	ext.Extensions = append(ext.Extensions, p.ByName("ext"))
+	ext.Extensions = append(ext.Extensions, extList...)
 	app.ServersMutex.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
 }
 
-// extensionsDel deletes an extension.
-func extensionsDel(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+// extensionsRemove deletes extensions.
+// Syntax:
+// [".ext1", ".ext2", ...]
+func extensionsRemove(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	ext := getExt(w, r, p)
 	if ext == nil {
 		return
 	}
-	extDel := p.ByName("ext")
+
+	var extList []string
+	err := json.NewDecoder(r.Body).Decode(&extList)
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err)
+		return
+	}
 
 	app.ServersMutex.Lock()
 	for i, extension := range ext.Extensions {
-		if extension == extDel {
-			ext.Extensions = append(ext.Extensions[:i], ext.Extensions[i+1:]...)
+		for _, extension2 := range extList {
+			if extension == extension2 {
+				ext.Extensions = append(ext.Extensions[:i], ext.Extensions[i+1:]...)
+				break
+			}
 		}
 	}
 	app.ServersMutex.Unlock()

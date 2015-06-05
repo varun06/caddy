@@ -54,7 +54,7 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error) 
 		Status: "error",
 		Code:   status,
 	}
-	if status < 500 {
+	if status < 500 && err != nil {
 		einfo.Message = err.Error()
 	}
 
