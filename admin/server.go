@@ -127,11 +127,21 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	vh.Stop()
 
 	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
 	delete(srv.Vhosts, host)
-	app.ServersMutex.Unlock()
 
 	if len(srv.Vhosts) == 0 {
+		// Graceful shutdown
 		srv.Stop(app.ShutdownCutoff)
+
+		// Remove it from the list of servers
+		for i, s := range app.Servers {
+			if s == srv {
+				app.Servers = append(app.Servers[:i], app.Servers[i+1:]...)
+				break
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
