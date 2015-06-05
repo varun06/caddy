@@ -1,7 +1,7 @@
 package admin
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
 
@@ -10,34 +10,36 @@ import (
 )
 
 func init() {
-	router.GET("/:addr/root", auth(rootGet))
-	router.PUT("/:addr/root/:root", auth(rootSet))
+	router.PUT("/:addr/root", auth(rootSet))
 }
 
-func rootGet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	vh := virtualHost(p.ByName("addr"))
-	if vh == nil {
-		handleError(w, r, http.StatusNotFound, nil)
-		return
-	}
-	fmt.Fprintf(w, "%s", vh.Config.Root)
-}
-
+// rootSet sets the new site root.
 func rootSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	vh := virtualHost(p.ByName("addr"))
-	if vh == nil {
-		handleError(w, r, http.StatusNotFound, nil)
-		return
-	}
+	r.ParseForm()
 
 	app.ServersMutex.Lock()
-	vh.Config.Root = p.ByName("root")
+	defer app.ServersMutex.Unlock()
+
+	vh := virtualHost(p.ByName("addr"))
+	if vh == nil {
+		handleError(w, r, http.StatusNotFound, nil)
+		return
+	}
+
+	newRoot := r.Form.Get("root")
+	if newRoot == "" {
+		handleError(w, r, http.StatusBadRequest, errors.New("root cannot be empty"))
+		return
+	}
+
+	vh.Config.Root = newRoot
 
 	// Middleware stack must be rebuilt after any change to server config,
 	// so the middlewares get the latest information
 	err := vh.BuildStack()
-	app.ServersMutex.Unlock()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	w.WriteHeader(http.StatusOK)
 }

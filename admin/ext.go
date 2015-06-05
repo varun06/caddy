@@ -23,11 +23,11 @@ func init() {
 
 // extensionsGet serializes the ext middleware out to the client to view.
 func extensionsGet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	e := getExt(w, r, p)
-	if e == nil {
+	ext := getExt(w, r, p)
+	if ext == nil {
 		return
 	}
-	json.NewEncoder(w).Encode(e)
+	respondJSON(w, r, ext, http.StatusOK)
 }
 
 // extensionsCreate creates a new ext middleware and chains it into a virtualhost.
@@ -54,8 +54,8 @@ func extensionsDelete(w http.ResponseWriter, r *http.Request, p httprouter.Param
 // Syntax:
 // [".ext1", ".ext2", ...]
 func extensionsSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	e := getExt(w, r, p)
-	if e == nil {
+	ext := getExt(w, r, p)
+	if ext == nil {
 		return
 	}
 
@@ -67,7 +67,7 @@ func extensionsSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 	}
 
 	app.ServersMutex.Lock()
-	e.Extensions = extList
+	ext.Extensions = extList
 	app.ServersMutex.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -75,12 +75,12 @@ func extensionsSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 
 // extensionsAdd adds a new extension.
 func extensionsAdd(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	e := getExt(w, r, p)
-	if e == nil {
+	ext := getExt(w, r, p)
+	if ext == nil {
 		return
 	}
 	app.ServersMutex.Lock()
-	e.Extensions = append(e.Extensions, p.ByName("ext"))
+	ext.Extensions = append(ext.Extensions, p.ByName("ext"))
 	app.ServersMutex.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
@@ -88,16 +88,16 @@ func extensionsAdd(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 
 // extensionsDel deletes an extension.
 func extensionsDel(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	e := getExt(w, r, p)
-	if e == nil {
+	ext := getExt(w, r, p)
+	if ext == nil {
 		return
 	}
 	extDel := p.ByName("ext")
 
 	app.ServersMutex.Lock()
-	for i, extension := range e.Extensions {
+	for i, extension := range ext.Extensions {
 		if extension == extDel {
-			e.Extensions = append(e.Extensions[:i], e.Extensions[i+1:]...)
+			ext.Extensions = append(ext.Extensions[:i], ext.Extensions[i+1:]...)
 		}
 	}
 	app.ServersMutex.Unlock()

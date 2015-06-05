@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -36,15 +38,30 @@ func auth(h httprouter.Handle) httprouter.Handle {
 	}
 }
 
-// handleError handles errors during API requests
+// handleError handles errors during API requests, including writing the response.
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error) {
 	if err != nil {
 		log.Println(err)
 	}
-	w.WriteHeader(status)
 	// TODO: This'll need to be JSON or something
+	//w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	// NOTE/SUGGESTION: If HTTP status code is in the 400s, write error text to client?
 	fmt.Fprintf(w, "%d %s\n", status, http.StatusText(status))
+}
+
+// respondJSON encodes data as JSON and writes it to w with the given status code.
+// It handles any errors that may occur. handleError() should NOT call this function,
+// since this function may call handleError().
+func respondJSON(w http.ResponseWriter, r *http.Request, data interface{}, status int) {
+	buf := new(bytes.Buffer)
+	if err := json.NewEncoder(buf).Encode(data); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	buf.WriteTo(w)
 }
 
 // virtualHost gets only the VirtualHost only of the address

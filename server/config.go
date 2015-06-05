@@ -12,7 +12,7 @@ type Config struct {
 	Host string
 
 	// The host address to bind on - defaults to (virtual) Host if empty
-	BindHost string
+	BindHost string `json:",omitempty"`
 
 	// The port to listen on
 	Port string
@@ -63,12 +63,12 @@ func (c Config) Address() string {
 // if at all. A certificate and key are both required.
 // The rest is optional.
 type TLSConfig struct {
-	Enabled                  bool
-	Certificate              string
-	Key                      string
-	Ciphers                  []uint16
-	ProtocolMinVersion       uint16
-	ProtocolMaxVersion       uint16
-	PreferServerCipherSuites bool
-	ClientCerts              []string
+	Enabled                  bool     `json:",omitempty"`
+	Certificate              string   `json:",omitempty"`
+	Key                      string   `json:",omitempty"`
+	Ciphers                  []uint16 `json:",omitempty"`
+	ProtocolMinVersion       uint16   `json:",omitempty"`
+	ProtocolMaxVersion       uint16   `json:",omitempty"`
+	PreferServerCipherSuites bool     `json:",omitempty"`
+	ClientCerts              []string `json:",omitempty"`
 }

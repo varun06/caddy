@@ -1,12 +1,13 @@
 package admin
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -23,12 +24,7 @@ func init() {
 
 // serverList shows the list of servers and their information
 func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(app.Servers); err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	io.Copy(w, buf)
+	respondJSON(w, r, app.Servers, http.StatusOK)
 }
 
 // serverInfo returns information about a specific server/virtualhost
@@ -38,12 +34,7 @@ func serverInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		handleError(w, r, http.StatusNotFound, nil)
 		return
 	}
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(vh.Config); err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	io.Copy(w, buf)
+	respondJSON(w, r, vh.Config, http.StatusOK)
 }
 
 // serverCreate spins up a new server or virtualhost (or both, if needed)
@@ -102,14 +93,37 @@ func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 			// Initiate the new server that will operate the listener for this virtualhost
 			app.Servers = append(app.Servers, s)
 			app.Wg.Add(1)
+
+			errChan := make(chan error)
+			errTimeout := 1500 * time.Millisecond
+
 			go func() {
 				defer app.Wg.Done()
-				s.Start() // TODO: Error handling here? Maybe use a channel?
-				// TODO - Note that main.go does something similar but has the luxury
-				// of shutting down the whole server because it's during startup.
-				// What do we do in the case of errors here?
+				start := time.Now()
+
+				// Start the server
+				err := s.Start()
+
+				// Report the error if it wasn't the usual 'error' on shutdown
+				if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
+					if time.Since(start) < errTimeout {
+						errChan <- err // respond with error to client immediately
+					} else {
+						log.Println(err) // client is probably long gone by now, so... log I guess
+					}
+				}
 			}()
+
+			// Hang the request for just a moment to see if startup succeeded
+			select {
+			case err := <-errChan:
+				handleError(w, r, http.StatusBadRequest, err)
+				return
+			case <-time.After(errTimeout):
+			}
 		}
+
+		break // there must only be one server/virtualhost
 	}
 
 	w.WriteHeader(http.StatusCreated)
