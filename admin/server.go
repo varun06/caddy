@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,9 +23,12 @@ func init() {
 
 // serverList shows the list of servers and their information
 func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	if err := json.NewEncoder(w).Encode(app.Servers); err != nil {
+	buf := new(bytes.Buffer)
+	if err := json.NewEncoder(buf).Encode(app.Servers); err != nil {
 		handleError(w, r, http.StatusInternalServerError, err)
+		return
 	}
+	io.Copy(w, buf)
 }
 
 // serverInfo returns information about a specific server/virtualhost
@@ -34,15 +38,20 @@ func serverInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		handleError(w, r, http.StatusNotFound, nil)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(vh.Config); err != nil {
+	buf := new(bytes.Buffer)
+	if err := json.NewEncoder(buf).Encode(vh.Config); err != nil {
 		handleError(w, r, http.StatusInternalServerError, err)
+		return
 	}
+	io.Copy(w, buf)
 }
 
-// serverCreate spins up a new server (or virtualhost)
+// serverCreate spins up a new server or virtualhost (or both, if needed)
 func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// Parse the configuration
-	configHead := strings.NewReader(p.ByName("addr") + "\n")
+	addr := p.ByName("addr")
+
+	// Parse the configuration (after prepending the address)
+	configHead := strings.NewReader(addr + "\n")
 	configs, err := config.Load("HTTP_POST", io.MultiReader(configHead, r.Body))
 	if err != nil {
 		handleError(w, r, http.StatusBadRequest, err)
@@ -62,34 +71,35 @@ func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// There should only be one binding and one config,
 	// but we don't know what the bind address is, so we
 	// range over the map.
-	for addr, cfgs := range bindings {
+	for address, cfgs := range bindings {
 		// Create a server that will build the virtual host
-		s, err := server.New(addr.String(), cfgs, cfgs[0].TLS.Enabled)
+		s, err := server.New(address.String(), cfgs, cfgs[0].TLS.Enabled)
 		if err != nil {
 			handleError(w, r, http.StatusBadRequest, err)
 			return
 		}
 
 		// See if there's a server that is already listening at the address
-		var addressUsed bool
+		var hasListener bool
 		for _, existingServer := range app.Servers {
-			if addr.String() == existingServer.Address {
-				addressUsed = true
+			if address.String() == existingServer.Address {
+				hasListener = true
 
 				// Okay, now the virtual host address must not exist already
 				if _, vhostExists := existingServer.Vhosts[cfgs[0].Host]; vhostExists {
-					handleError(w, r, http.StatusBadRequest, errors.New("Server already listening at "+p.ByName("addr")))
+					handleError(w, r, http.StatusBadRequest, errors.New("Server already listening at "+addr))
 					return
 				}
 
 				vh := s.Vhosts[cfgs[0].Host]
-				vh.Start()
 				existingServer.Vhosts[cfgs[0].Host] = vh
+				vh.Start()
 				break
 			}
 		}
 
-		if !addressUsed {
+		if !hasListener {
+			// Initiate the new server that will operate the listener for this virtualhost
 			app.Servers = append(app.Servers, s)
 			app.Wg.Add(1)
 			go func() {
@@ -103,7 +113,6 @@ func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	// TODO: Response body?
 }
 
 // serverStop stops a running server (or virtualhost) with a graceful shutdown.
@@ -118,13 +127,12 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	vh.Stop()
 
 	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
 	delete(srv.Vhosts, host)
+	app.ServersMutex.Unlock()
+
 	if len(srv.Vhosts) == 0 {
 		srv.Stop(app.ShutdownCutoff)
 	}
 
-	// TODO: write a proper response
 	w.WriteHeader(http.StatusOK)
 }

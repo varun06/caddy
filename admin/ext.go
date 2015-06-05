@@ -16,8 +16,8 @@ func init() {
 	router.POST("/:addr/ext", auth(extensionsCreate))
 	router.DELETE("/:addr/ext", auth(extensionsDelete))
 
-	router.POST("/:addr/ext/extensions", auth(extensionsSet))
-	router.PUT("/:addr/ext/extensions/:ext", auth(extensionsAdd))
+	router.PUT("/:addr/ext/extensions", auth(extensionsSet))
+	router.POST("/:addr/ext/extensions/:ext", auth(extensionsAdd))
 	router.DELETE("/:addr/ext/extensions/:ext", auth(extensionsDel))
 }
 

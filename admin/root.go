@@ -11,7 +11,7 @@ import (
 
 func init() {
 	router.GET("/:addr/root", auth(rootGet))
-	router.POST("/:addr/root/:root", auth(rootSet))
+	router.PUT("/:addr/root/:root", auth(rootSet))
 }
 
 func rootGet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
