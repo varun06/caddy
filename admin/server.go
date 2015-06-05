@@ -69,6 +69,7 @@ func serverCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 			handleError(w, r, http.StatusBadRequest, err)
 			return
 		}
+		s.HTTP2 = app.Http2 // TODO: This setting is temporary
 
 		// See if there's a server that is already listening at the address
 		var hasListener bool

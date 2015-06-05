@@ -43,11 +43,32 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error) 
 	if err != nil {
 		log.Println(err)
 	}
-	// TODO: This'll need to be JSON or something
-	//w.Header().Set("Content-Type", "application/json")
+
+	type errInfo struct {
+		Status  string `json:"status"`
+		Code    int    `json:"code"`
+		Message string `json:"message,omitempty"`
+	}
+
+	einfo := errInfo{
+		Status: "error",
+		Code:   status,
+	}
+	if status < 500 {
+		einfo.Message = err.Error()
+	}
+
+	buf := new(bytes.Buffer)
+	if err := json.NewEncoder(buf).Encode(einfo); err != nil {
+		log.Println("Error handling error; could not marshal error info:", err)
+		w.WriteHeader(status)
+		fmt.Fprint(w, http.StatusText(status))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	// NOTE/SUGGESTION: If HTTP status code is in the 400s, write error text to client?
-	fmt.Fprintf(w, "%d %s\n", status, http.StatusText(status))
+	buf.WriteTo(w)
 }
 
 // respondJSON encodes data as JSON and writes it to w with the given status code.
