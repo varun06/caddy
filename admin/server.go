@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
@@ -35,7 +36,7 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
 
-	err := InitializeWithConfig("HTTP_POST", r.Body, replace)
+	err := InitializeReadConfig("HTTP_POST", r.Body, replace)
 	if err != nil {
 		handleError(w, r, http.StatusBadRequest, err)
 		return
@@ -63,7 +64,7 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	app.Servers = []*server.Server{}
 
 	// Create and start new servers
-	err := InitializeWithConfig("HTTP_POST", r.Body, false)
+	err := InitializeReadConfig("HTTP_POST", r.Body, false)
 	if err != nil {
 		// Oh no! Roll back.
 		app.Servers = backup
@@ -129,14 +130,14 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// InitializeWithConfig reads the configuration from body and starts new
+// InitializeReadConfig reads the configuration from body and starts new
 // servers. If replace is true, a server that has the same host and port
 // as a new one will be replaced with the new one, no questions asked.
 // If replace is false, the same host:port will conflict and cause an
 // error. It is NOT safe to call this concurrently. Use app.ServersMutex.
-func InitializeWithConfig(configSource string, body io.Reader, replace bool) error {
-	// Parse and load the configuration
-	configs, err := config.Load(configSource, body)
+func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
+	// Parse and load all configurations
+	configs, err := config.Load(filename, body)
 	if err != nil {
 		return err
 	}
@@ -147,6 +148,15 @@ func InitializeWithConfig(configSource string, body io.Reader, replace bool) err
 		return err
 	}
 
+	return InitializeWithConfig(filename, bindings, replace)
+}
+
+// InitializeWithBindings is like InitializeReadConfig except that it
+// sets up servers using pre-made Config structs, organized by net
+// address, rather than reading and parsing the config from scratch.
+// Call config.ArrangeBindings to organize configurations by address.
+// It is NOT safe to call this concurrently. Use app.ServersMutex.
+func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]server.Config, replace bool) error {
 	// If replacing is not allowed, make sure each virtualhost is unique
 	// BEFORE we start the servers, so we don't end up with a partially
 	// fulfilled request.

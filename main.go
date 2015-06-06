@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -24,6 +23,7 @@ var (
 	conf    string
 	cpu     string
 	version bool
+	idle    bool
 )
 
 func init() {
@@ -35,6 +35,7 @@ func init() {
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.BoolVar(&idle, "idle", false, "Start idly (without serving anything)")
 }
 
 func main() {
@@ -51,69 +52,57 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Load config from file
-	allConfigs, err := loadConfigs()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Group by address (virtual hosts)
-	addresses, err := config.ArrangeBindings(allConfigs)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Start each server with its one or more configurations
-	for addr, configs := range addresses {
-		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
+	if idle {
+		fmt.Println("Idling")
+	} else {
+		// Load config from file
+		allConfigs, err := loadConfigs()
 		if err != nil {
 			log.Fatal(err)
 		}
-		s.HTTP2 = app.Http2 // TODO: This setting is temporary
-		app.Wg.Add(1)
-		go func(s *server.Server) {
-			defer app.Wg.Done()
-			err := s.Start()
-			if err != nil {
-				// Graceful shutdowns will return an error of type net.OpError with "accept"
-				// in the Op field. We can ignore those - the rest we should deal with.
-				if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
-					log.Fatal(err) // kill whole process to avoid a half-alive zombie server
-				}
-			}
-		}(s)
 
+		if len(allConfigs) == 0 {
+			log.Fatal("No sites to serve")
+		}
+
+		// Group by address (virtual hosts)
+		addresses, err := config.ArrangeBindings(allConfigs)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Start your engines!
 		app.ServersMutex.Lock()
-		app.Servers = append(app.Servers, s)
+		err = admin.InitializeWithConfig(allConfigs[0].ConfigFile, addresses, false)
 		app.ServersMutex.Unlock()
-	}
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// Show initialization output
-	if !app.Quiet {
-		var checkedFdLimit bool
-		for addr, configs := range addresses {
-			for _, conf := range configs {
-				// Print address of site
-				fmt.Println(conf.Address())
+		// Show initialization output
+		if !app.Quiet {
+			var checkedFdLimit bool
+			for addr, configs := range addresses {
+				for _, conf := range configs {
+					// Print address of site
+					fmt.Println(conf.Address())
 
-				// Note if non-localhost site resolves to loopback interface
-				if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
-					fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
-						conf.Host, addr.IP.String())
+					// Note if non-localhost site resolves to loopback interface
+					if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+						fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
+							conf.Host, addr.IP.String())
+					}
 				}
-			}
 
-			if !checkedFdLimit && !addr.IP.IsLoopback() {
-				checkFdlimit()
-				checkedFdLimit = true
+				if !checkedFdLimit && !addr.IP.IsLoopback() {
+					checkFdlimit()
+					checkedFdLimit = true
+				}
 			}
 		}
 	}
 
 	// TODO: ADMIN
-	// TODO: Wg.Add(1) for admin.Serve()? (Maybe in the future, it could be terminated remotely)
-	// TODO: Currently, this serve doesn't get killed by Ctrl+C because our interrupt handler
-	// doesn't stop the process. We need to fix this.
 	admin.Serve("localhost:10000", server.TLSConfig{})
 
 	// Wait for all listeners to stop

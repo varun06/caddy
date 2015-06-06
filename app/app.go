@@ -32,7 +32,7 @@ const (
 
 var (
 	// Servers is a list of all the currently-listening servers
-	Servers []*server.Server
+	Servers = []*server.Server{}
 
 	// ServersMutex protects the Servers slice during changes
 	ServersMutex sync.Mutex
