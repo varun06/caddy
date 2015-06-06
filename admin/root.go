@@ -13,7 +13,7 @@ func init() {
 	router.PUT("/:addr/root", auth(rootSet))
 }
 
-// rootSet sets the new site root.
+// rootSet sets the new site root, with "root=<new root>" in the query string.
 func rootSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	r.ParseForm()
 
@@ -34,12 +34,16 @@ func rootSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	vh.Config.Root = newRoot
 
-	// Middleware stack must be rebuilt after any change to server config,
-	// so the middlewares get the latest information
+	// We basically have to restart the whole virtualhost when something
+	// as crucial as the root changes; several middlewares may have
+	// copies of the root which need updating or services they need to
+	// reconfigure.
+	vh.Stop()
 	err := vh.BuildStack()
 	if err != nil {
 		log.Fatal(err)
 	}
+	vh.Start()
 
 	w.WriteHeader(http.StatusOK)
 }

@@ -80,6 +80,7 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 
 	return func(next middleware.Handler) middleware.Handler {
 		md.Next = next
+		md.Root = c.Root
 		return md
 	}, nil
 }

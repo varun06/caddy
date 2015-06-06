@@ -12,9 +12,9 @@ import (
 // multiple sites on a single address, and this is what a
 // virtualHost allows us to do.
 type VirtualHost struct {
-	Config     Config
-	FileServer middleware.Handler `json:"-"`
-	Stack      middleware.Handler `json:"-"`
+	Config     *Config
+	Stack      middleware.Handler `json:"-"` // beginning
+	FileServer middleware.Handler `json:"-"` // end
 }
 
 // BuildStack builds the server's middleware stack based

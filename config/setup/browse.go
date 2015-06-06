@@ -16,14 +16,12 @@ func Browse(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	browse := &browse.Browse{
-		Root:    c.Root,
-		Configs: configs,
-	}
-
 	return func(next middleware.Handler) middleware.Handler {
-		browse.Next = next
-		return browse
+		return &browse.Browse{
+			Root:    c.Root,
+			Configs: configs,
+			Next:    next,
+		}
 	}, nil
 }
 

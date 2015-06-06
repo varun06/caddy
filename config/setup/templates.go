@@ -14,15 +14,13 @@ func Templates(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	tmpls := &templates.Templates{
-		Rules:   rules,
-		Root:    c.Root,
-		FileSys: http.Dir(c.Root),
-	}
-
 	return func(next middleware.Handler) middleware.Handler {
-		tmpls.Next = next
-		return tmpls
+		return &templates.Templates{
+			Rules:   rules,
+			Root:    c.Root,
+			FileSys: http.Dir(c.Root),
+			Next:    next,
+		}
 	}, nil
 }
 

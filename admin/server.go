@@ -157,7 +157,7 @@ func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 // Call config.ArrangeBindings to organize configurations by address.
 // It is NOT safe to call this concurrently. Use app.ServersMutex.
 // This function is non-blocking - servers are started in separate goroutines.
-func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]server.Config, replace bool) error {
+func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]*server.Config, replace bool) error {
 	// If replacing is not allowed, make sure each virtualhost is unique
 	// BEFORE we start the servers, so we don't end up with a partially
 	// fulfilled request.

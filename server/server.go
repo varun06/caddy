@@ -27,7 +27,7 @@ type Server struct {
 // New creates a new Server which will bind to addr and serve
 // the sites/hosts configured in configs. This function does
 // not start serving.
-func New(addr string, configs []Config, tls bool) (*Server, error) {
+func New(addr string, configs []*Config, tls bool) (*Server, error) {
 	s := &Server{
 		Address: addr,
 		TLS:     tls,

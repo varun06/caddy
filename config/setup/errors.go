@@ -64,7 +64,7 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 			if what == "log" {
 				handler.LogFile = where
 			} else {
-				// Error page; ensure it exists
+				// Error page; ensure it exists - TODO: Is this really necessary or even a good idea? (e.g. what if root changes)
 				where = path.Join(c.Root, where)
 				f, err := os.Open(where)
 				if err != nil {

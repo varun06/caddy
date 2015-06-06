@@ -164,7 +164,7 @@ func createMiddleware(r *http.Request, p httprouter.Params, directive string, se
 
 	// Get ready to parse the configuration
 	c := &setup.Controller{
-		Config:    &vh.Config,
+		Config:    vh.Config,
 		Dispenser: parse.NewDispenser("HTTP_POST", r.Body),
 	}
 

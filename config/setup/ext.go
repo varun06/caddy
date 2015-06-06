@@ -9,8 +9,6 @@ import (
 
 // Ext configures a new instance of 'extensions' middleware for clean URLs.
 func Ext(c *Controller) (middleware.Middleware, error) {
-	root := c.Root
-
 	exts, err := extParse(c)
 	if err != nil {
 		return nil, err
@@ -20,7 +18,7 @@ func Ext(c *Controller) (middleware.Middleware, error) {
 		return &extensions.Ext{
 			Next:       next,
 			Extensions: exts,
-			Root:       root,
+			Root:       c.Root,
 		}
 	}, nil
 }

@@ -24,8 +24,8 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-func Load(filename string, input io.Reader) ([]server.Config, error) {
-	var configs []server.Config
+func Load(filename string, input io.Reader) ([]*server.Config, error) {
+	var configs []*server.Config
 
 	// turn off timestamp for parsing
 	flags := log.Flags()
@@ -40,7 +40,7 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 	// Iterate each server block and make a config for each one,
 	// executing the directives that were parsed.
 	for _, sb := range serverBlocks {
-		config := server.Config{
+		config := &server.Config{
 			Host:          sb.Host,
 			Port:          sb.Port,
 			Root:          Root,
@@ -60,7 +60,7 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 				// server config and the dispenser containing only
 				// this directive's tokens.
 				controller := &setup.Controller{
-					Config:    &config,
+					Config:    config,
 					Dispenser: parse.NewDispenserTokens(filename, tokens),
 				}
 
@@ -96,8 +96,8 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 // same address as a plaintext HTTP listener. The return value is a map of
 // bind address to list of configs that would become VirtualHosts on that
 // server.
-func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
-	addresses := make(map[*net.TCPAddr][]server.Config)
+func ArrangeBindings(allConfigs []*server.Config) (map[*net.TCPAddr][]*server.Config, error) {
+	addresses := make(map[*net.TCPAddr][]*server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -156,8 +156,8 @@ func validDirective(d string) bool {
 // Default makes a default configuration which
 // is empty except for root, host, and port,
 // which are essentials for serving the cwd.
-func Default() server.Config {
-	return server.Config{
+func Default() *server.Config {
+	return &server.Config{
 		Root: Root,
 		Host: Host,
 		Port: Port,

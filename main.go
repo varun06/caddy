@@ -136,12 +136,12 @@ func isLocalhost(s string) bool {
 // in this order: 1. -conf flag, 2. stdin, 3. Caddyfile.
 // If none of those are available, a default configuration is
 // loaded.
-func loadConfigs() ([]server.Config, error) {
+func loadConfigs() ([]*server.Config, error) {
 	// -conf flag
 	if conf != "" {
 		file, err := os.Open(conf)
 		if err != nil {
-			return []server.Config{}, err
+			return nil, err
 		}
 		defer file.Close()
 		return config.Load(path.Base(conf), file)
@@ -168,9 +168,9 @@ func loadConfigs() ([]server.Config, error) {
 	file, err := os.Open(config.DefaultConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []server.Config{config.Default()}, nil
+			return []*server.Config{config.Default()}, nil
 		}
-		return []server.Config{}, err
+		return nil, err
 	}
 	defer file.Close()
 
