@@ -2,10 +2,9 @@ package admin
 
 import (
 	"errors"
+	"io"
 	"log"
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -28,125 +27,60 @@ func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 // serversCreate creates servers using the contents of the request body. It does
 // not shut down any server instances unless "replace=true" is found in the query
-// string and the input configures a server with the same host:port as an existing
+// string and the input specifies a server with the same host:port as an existing
 // server. In that case, only the overlapping server is (gracefully) shut down
 // and will be restarted with the new configuration.
-//
-// TODO: Much of this code is what main.go could/should be doing anyway. Maybe
-// we could move this out of this package and into 'app' so both could share it.
 func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
 
-	// Parse the configuration
-	configs, err := config.Load("HTTP_POST", r.Body)
+	err := InitializeWithConfig("HTTP_POST", r.Body, replace)
 	if err != nil {
 		handleError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	// Arrange them by bind address (resolve hostname)
-	bindings, err := config.ArrangeBindings(configs)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
-	errChan := make(chan error)
-	errTimeout := 2 * time.Second
-
-	// For every listener address, we need to iterate its
-	// configs, since each one represents a virtualhost start.
-	for addr, configs := range bindings {
-		// Create a server that will build the virtual host
-		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
-		if err != nil {
-			handleError(w, r, http.StatusBadRequest, err)
-			return
-		}
-		s.HTTP2 = app.Http2 // TODO: This setting is temporary
-
-		// See if there's a server that is already listening at the address
-		var hasListener bool
-		for _, existingServer := range app.Servers {
-			if addr.String() == existingServer.Address {
-				hasListener = true
-
-				// Okay, now the virtual host address must not exist already, or it must be replaced
-				if _, vhostExists := existingServer.Vhosts[configs[0].Host]; vhostExists {
-					if !replace {
-						handleError(w, r, http.StatusBadRequest, errors.New("Server already listening at "+addr.String()))
-						return
-					}
-					delete(existingServer.Vhosts, configs[0].Host)
-				}
-
-				vh := s.Vhosts[configs[0].Host]
-				existingServer.Vhosts[configs[0].Host] = vh
-				vh.Start()
-				break
-			}
-		}
-
-		if !hasListener {
-			// Initiate the new server that will operate the listener for this virtualhost
-			app.Servers = append(app.Servers, s)
-			app.Wg.Add(1)
-
-			go func() {
-				defer app.Wg.Done()
-				start := time.Now()
-
-				// Start the server
-				err := s.Start()
-
-				// Report the error if it wasn't the usual 'error' on shutdown
-				if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
-					if time.Since(start) < errTimeout {
-						errChan <- err // respond with error to client immediately
-					} else {
-						log.Println(err) // client is probably long gone by now, so... log it
-					}
-				}
-			}()
-		}
-	}
-
-	// Hang the request for just a moment to see if startup succeeded;
-	// this way we can return a 201 Created instead of 202 Accepted
-	// if all goes well.
-	select {
-	case err := <-errChan:
-		handleError(w, r, http.StatusBadRequest, err)
-		return
-	case <-time.After(errTimeout):
-	}
-
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // serversReplace gracefully shuts down all listening servers and starts up
 // new ones based on the contents of the configuration that is found in the
-// response body.
+// response body. If there are any errors, the configuration is rolled back
+// so the downtime is minimal (inperceptably short). It is possible for the
+// failover to fail, in which case that particular server will not launch.
 func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// Delete all existing servers
 	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	// Keep current configuration in case we need to roll back
+	backup := app.Servers
+
+	// Delete all existing servers
 	for _, serv := range app.Servers {
 		serv.Stop(app.ShutdownCutoff)
 	}
 	app.Servers = []*server.Server{}
-	app.ServersMutex.Unlock()
 
-	// TODO: Check to make sure new config works!
+	// Create and start new servers
+	err := InitializeWithConfig("HTTP_POST", r.Body, false)
+	if err != nil {
+		// Oh no! Roll back.
+		app.Servers = backup
+		for _, serv := range app.Servers {
+			app.Wg.Add(1)
+			go func(serv *server.Server) {
+				defer app.Wg.Done()
+				serv.Start() // hopefully this works
+			}(serv)
+		}
+		handleError(w, r, http.StatusBadRequest, err)
+		return
+	}
 
-	// Create new ones
-	serversCreate(w, r, p)
+	w.WriteHeader(http.StatusAccepted)
 }
 
-// serverInfo returns information about a specific server/virtualhost
+// serverInfo returns information about a specific server/virtualhost.
 func serverInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	vh := virtualHost(p.ByName("addr"))
 	if vh == nil {
@@ -192,4 +126,88 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// InitializeWithConfig reads the configuration from body and starts new
+// servers. If replace is true, a server that has the same host and port
+// as a new one will be replaced with the new one, no questions asked.
+// If replace is false, the same host:port will conflict and cause an
+// error. It is NOT safe to call this concurrently. Use app.ServersMutex.
+func InitializeWithConfig(configSource string, body io.Reader, replace bool) error {
+	// Parse and load the configuration
+	configs, err := config.Load(configSource, body)
+	if err != nil {
+		return err
+	}
+
+	// Arrange servers by bind address (resolves hostnames)
+	bindings, err := config.ArrangeBindings(configs)
+	if err != nil {
+		return err
+	}
+
+	// If replacing is not allowed, make sure each virtualhost is unique
+	// BEFORE we start the servers, so we don't end up with a partially
+	// fulfilled request.
+	if !replace {
+		for addr, configs := range bindings {
+			for _, existingServer := range app.Servers {
+				for _, cfg := range configs {
+					if _, vhostExists := existingServer.Vhosts[cfg.Host]; vhostExists {
+						return errors.New(cfg.Host + " already listening at " + addr.String())
+					}
+				}
+			}
+		}
+	}
+
+	// For every listener address, we need to iterate its configs/virtualhosts.
+	for addr, configs := range bindings {
+		// Create a server that will build the virtual host
+		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
+		if err != nil {
+			return err
+		}
+		s.HTTP2 = app.Http2 // TODO: This setting is temporary
+
+		// See if there's a server that is already listening at the address
+		// If so, we just add the virtualhost to that server.
+		var hasListener bool
+		for _, existingServer := range app.Servers {
+			if addr.String() == existingServer.Address {
+				hasListener = true
+				for _, cfg := range configs {
+					vh := s.Vhosts[cfg.Host]
+					existingServer.Vhosts[cfg.Host] = vh
+					err := vh.Start()
+					if err != nil {
+						log.Println(err)
+					}
+				}
+				break
+			}
+		}
+
+		if hasListener {
+			continue
+		}
+
+		// Initiate the new server that will operate the listener for this virtualhost
+		app.Servers = append(app.Servers, s)
+		app.Wg.Add(1)
+
+		go func() {
+			defer app.Wg.Done()
+
+			// Start the server
+			err := s.Start()
+
+			// Report the error, maybe
+			if !server.IsIgnorableError(err) {
+				log.Println(err) // client is probably long gone by now, so... just log it
+			}
+		}()
+	}
+
+	return nil
 }

@@ -140,6 +140,15 @@ func ListenAndServeTLSWithSNI(srv *Server, tlsConfigs []TLSConfig) error {
 	return srv.Serve(tlsListener)
 }
 
+// IsIgnorableError returns true if err is an error that is expected
+// when a server quits - for example, trying to accept on a closed listener.
+// In that case, no action need be taken, since of course the listener is
+// closed - that is what makes the server quit!
+func IsIgnorableError(err error) bool {
+	opErr, ok := err.(*net.OpError)
+	return !ok || (ok && opErr.Op != "accept")
+}
+
 // setupClientAuth sets up TLS client authentication only if
 // any of the TLS configs specified at least one cert file.
 func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
