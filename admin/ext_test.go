@@ -1,17 +1,12 @@
 package admin
 
 import (
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
-	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/middleware/extensions"
-	"github.com/mholt/caddy/server"
 )
 
 func TestExtensionsGet(t *testing.T) {
@@ -124,66 +119,3 @@ func TestExtensionsRemove(t *testing.T) {
 		t.Errorf("Expected extension 1 to be .txt, but was %s", actual[1])
 	}
 }
-
-// setUp sets up a test by creating the test server(s) according to
-// the contents of caddyfile, then prepares a request according to
-// the method, path, and body that is passed in. It also returns a
-// ResponseRecorder for use in checking the response.
-func setUp(t *testing.T, caddyfile, method, path string, body io.Reader) (*httptest.ResponseRecorder, *http.Request, httprouter.Params) {
-	makeTestServer(t, caddyfile)
-	req, err := http.NewRequest(method, path, body)
-	if err != nil {
-		t.Fatalf("Error creating request: %v", err)
-	}
-	w := httptest.NewRecorder()
-	_, param, _ := router.Lookup(method, path)
-	return w, req, param
-}
-
-// makeTestServer clears app.Servers and then .... <TODO>
-func makeTestServer(t *testing.T, caddyfile string) {
-	app.Servers = []*server.Server{} // start empty each time
-
-	configs, err := config.Load("Testfile", strings.NewReader(caddyfile))
-	if err != nil {
-		t.Fatalf("Could not create server configs: %v", err)
-	}
-
-	// Arrange it by bind address (resolve hostname)
-	bindings, err := config.ArrangeBindings(configs)
-	if err != nil {
-		t.Fatalf("Could not arrange test server bindings: %v", err)
-	}
-
-	for address, cfgs := range bindings {
-		// Create a server that will build the virtual host
-		s, err := server.New(address.String(), cfgs, cfgs[0].TLS.Enabled)
-		if err != nil {
-			t.Fatalf("Could not create test server %s: %v", address, err)
-		}
-
-		// See if there's a server that is already listening at the address
-		var hasListener bool
-		for _, existingServer := range app.Servers {
-			if address.String() == existingServer.Address {
-				hasListener = true
-
-				// Okay, now the virtual host address must not exist already
-				if _, vhostExists := existingServer.Vhosts[cfgs[0].Host]; vhostExists {
-					t.Fatalf("Virtualhost already exists: %s", cfgs[0].Address())
-				}
-
-				vh := s.Vhosts[cfgs[0].Host]
-				existingServer.Vhosts[cfgs[0].Host] = vh
-				break
-			}
-		}
-
-		if !hasListener {
-			// Initiate the new server that will operate the listener for this virtualhost
-			app.Servers = append(app.Servers, s)
-		}
-	}
-}
-
-const testAddr = "localhost:2015"

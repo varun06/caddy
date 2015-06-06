@@ -31,7 +31,7 @@ func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // string and the input specifies a server with the same host:port as an existing
 // server. In that case, only the overlapping server is (gracefully) shut down
 // and will be restarted with the new configuration. If there is an error, not all
-// the new servers may be started.
+// the new servers may be started. This handler is non-blocking.
 func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
@@ -49,7 +49,8 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 // new ones based on the contents of the configuration that is found in the
 // response body. If there are any errors, the configuration is rolled back
 // so the downtime is minimal (inperceptably short). It is possible for the
-// failover to fail, in which case that particular server will not launch.
+// failover to fail, in which case the failing server will not launch. This
+// handler is non-blocking.
 func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	app.ServersMutex.Lock()
 	defer app.ServersMutex.Unlock()
@@ -92,7 +93,8 @@ func serverInfo(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	respondJSON(w, r, vh.Config, http.StatusOK)
 }
 
-// serverStop stops a running server (or virtualhost) with a graceful shutdown.
+// serverStop stops a running server (or virtualhost) with a graceful shutdown and
+// deletes the server. This function is non-blocking and safe for concurrent use.
 func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	host, port := safeSplitHostPort(p.ByName("addr"))
 	srv, vh := getServerAndVirtualHost(host, port)
@@ -104,17 +106,7 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	app.ServersMutex.Lock()
 	defer app.ServersMutex.Unlock()
 
-	if len(srv.Vhosts) > 1 {
-		// Stopping a whole server will automatically call Stop
-		// on all its virtualhosts, but we only stop the server
-		// if there are no more virtualhosts left on it. So
-		// we must stop this virtualhost manually in that case.
-		vh.Stop()
-	}
-
-	delete(srv.Vhosts, host)
-
-	if len(srv.Vhosts) == 0 {
+	if len(srv.Vhosts) == 1 {
 		// Graceful shutdown
 		srv.Stop(app.ShutdownCutoff)
 
@@ -125,9 +117,16 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 				break
 			}
 		}
+	} else {
+		// Stopping a whole server will automatically call Stop
+		// on all its virtualhosts, but we only stop the server
+		// if there are no more virtualhosts left on it. So
+		// we must stop this virtualhost manually in that case.
+		vh.Stop()
+		delete(srv.Vhosts, host)
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // InitializeReadConfig reads the configuration from body and starts new
@@ -135,6 +134,7 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // as a new one will be replaced with the new one, no questions asked.
 // If replace is false, the same host:port will conflict and cause an
 // error. It is NOT safe to call this concurrently. Use app.ServersMutex.
+// This function is non-blocking - servers are started in separate goroutines.
 func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 	// Parse and load all configurations
 	configs, err := config.Load(filename, body)
@@ -156,6 +156,7 @@ func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 // address, rather than reading and parsing the config from scratch.
 // Call config.ArrangeBindings to organize configurations by address.
 // It is NOT safe to call this concurrently. Use app.ServersMutex.
+// This function is non-blocking - servers are started in separate goroutines.
 func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]server.Config, replace bool) error {
 	// If replacing is not allowed, make sure each virtualhost is unique
 	// BEFORE we start the servers, so we don't end up with a partially
