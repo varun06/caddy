@@ -228,10 +228,10 @@ func (g *Graceful) interruptChan() chan os.Signal {
 func (g *Graceful) handleInterrupt(interrupt chan os.Signal, listener net.Listener) {
 	<-interrupt
 	g.SetKeepAlivesEnabled(false)
-	_ = listener.Close() // we are shutting down anyway. ignore error.
 	if g.ShutdownCallback != nil {
-		g.ShutdownCallback()
+		g.ShutdownCallback() // do this before closing the listener to avoid race condition
 	}
+	listener.Close() // we are shutting down anyway. ignore error.
 }
 
 func (g *Graceful) shutdown(shutdown chan chan struct{}, kill chan struct{}) {
