@@ -21,10 +21,19 @@ var router = httprouter.New()
 
 // Serve starts the admin server. It blocks indefinitely.
 func Serve(address string, tls server.TLSConfig) {
+	if app.APIServer != nil {
+		app.APIServer.Stop(app.ShutdownCutoff)
+	}
+
+	g := server.NewGraceful(address, router)
+	app.APIServer = g
+	app.Wg.Add(1)
+	defer app.Wg.Done()
+
 	if tls.Enabled {
-		http.ListenAndServeTLS(address, tls.Certificate, tls.Key, router)
+		g.ListenAndServeTLS(tls.Certificate, tls.Key)
 	} else {
-		http.ListenAndServe(address, router)
+		g.ListenAndServe()
 	}
 }
 

@@ -29,7 +29,8 @@ func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // not shut down any server instances unless "replace=true" is found in the query
 // string and the input specifies a server with the same host:port as an existing
 // server. In that case, only the overlapping server is (gracefully) shut down
-// and will be restarted with the new configuration.
+// and will be restarted with the new configuration. If there is an error, not all
+// the new servers may be started.
 func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"

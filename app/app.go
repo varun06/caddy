@@ -45,6 +45,9 @@ var (
 
 	// Quiet mode hides non-error initialization output
 	Quiet bool
+
+	// The API server
+	APIServer *server.Graceful
 )
 
 // SetCPU parses string cpu and sets GOMAXPROCS
@@ -94,5 +97,9 @@ func init() {
 			s.Stop(ShutdownCutoff)
 		}
 		ServersMutex.Unlock()
+
+		if APIServer != nil {
+			APIServer.Stop(ShutdownCutoff)
+		}
 	}()
 }
