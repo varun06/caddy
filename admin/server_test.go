@@ -57,20 +57,21 @@ func TestServersCreate(t *testing.T) {
 	}
 
 	// Try a real request to the new server
-	_, err := http.Get("http://" + newServerAddr)
+	resp, err := http.Get("http://" + newServerAddr)
 	if err != nil {
 		t.Errorf("Expected GET request to %s to succeed, but error was: %v", newServerAddr, err)
 	}
+	resp.Body.Close()
 
 	killServers()
 }
 
 func TestServersReplace(t *testing.T) {
 	caddyfile := testAddr
-	newServerAddr := "127.0.0.1:3932"
-	reqCaddyfile := newServerAddr + `
+	newServerAddr := "127.0.0.1:3933"
+	newCaddyfile := newServerAddr + `
 	    gzip`
-	w, r, p := setUp(t, caddyfile, "PUT", "/", strings.NewReader(reqCaddyfile))
+	w, r, p := setUp(t, caddyfile, "PUT", "/", strings.NewReader(newCaddyfile))
 
 	serversReplace(w, r, p)
 
@@ -88,10 +89,42 @@ func TestServersReplace(t *testing.T) {
 	}
 
 	// Try a real request to the replacement server
-	_, err := http.Get("http://" + newServerAddr)
+	resp, err := http.Get("http://" + newServerAddr)
 	if err != nil {
 		t.Errorf("Expected GET request to %s to succeed, but error was: %v", newServerAddr, err)
 	}
+	resp.Body.Close() // really important, or deadlock! (even though we don't use it)
+
+	killServers()
+}
+
+func TestServersReplaceRollback(t *testing.T) {
+	caddyfile := testAddr
+	newServerAddr := "127.0.0.1:3934"
+	newCaddyfile := newServerAddr + `
+	    asdf`
+	w, r, p := setUp(t, caddyfile, "PUT", "/", strings.NewReader(newCaddyfile))
+	StartServer(app.Servers[0])
+
+	serversReplace(w, r, p)
+
+	if expected, actual := http.StatusBadRequest, w.Code; expected != actual {
+		t.Errorf("Expected status %d, got %d", expected, actual)
+	}
+
+	// Make sure new server is NOT started
+	resp, err := http.Get("http://" + newServerAddr)
+	if err == nil {
+		t.Errorf("Expected GET request to new listener %s to fail, but no error (status %s)", newServerAddr, resp.Status)
+		resp.Body.Close()
+	}
+
+	// Make sure old server IS restarted.
+	resp, err = http.Get("http://" + testAddr)
+	if err != nil {
+		t.Errorf("Expected GET request to fallback listener %s to succeed, but error was: %v", testAddr, err)
+	}
+	resp.Body.Close()
 
 	killServers()
 }
@@ -118,13 +151,14 @@ func TestServerStop(t *testing.T) {
 	caddyfile := testServerAddr
 	w, r, p := setUp(t, caddyfile, "DELETE", "/"+testServerAddr, nil)
 
-	properlyStopped := make(chan bool, 1)
+	shutdownCallbackExecuted := make(chan bool, 1)
 	app.Servers[0].Vhosts["localhost"].Config.Shutdown = append(app.Servers[0].Vhosts["localhost"].Config.Shutdown, func() error {
-		properlyStopped <- true
+		shutdownCallbackExecuted <- true
 		return nil
 	})
 
-	go app.Servers[0].Start()
+	// Start--then stop--the server.
+	StartServer(app.Servers[0])
 	serverStop(w, r, p)
 
 	if expected, actual := http.StatusAccepted, w.Code; expected != actual {
@@ -134,10 +168,11 @@ func TestServerStop(t *testing.T) {
 	resp, err := http.Get("http://" + testServerAddr)
 	if err == nil {
 		t.Errorf("Expected server to be shut down, but GET request succeeded: %s", resp.Status)
+		resp.Body.Close()
 	}
 
 	select {
-	case <-properlyStopped:
+	case <-shutdownCallbackExecuted:
 	case <-time.After(app.ShutdownCutoff):
 		t.Errorf("Shutdown callback was not executed")
 	}
@@ -153,7 +188,7 @@ func TestServerStop(t *testing.T) {
 // the contents of caddyfile, then prepares a request according to
 // the method, path, and body that is passed in. It also returns a
 // ResponseRecorder for use in checking the response. It does NOT
-// start any listeners.
+// start any listeners. For that, you should use StartServer().
 func setUp(t *testing.T, caddyfile, method, path string, body io.Reader) (*httptest.ResponseRecorder, *http.Request, httprouter.Params) {
 	makeTestServer(t, caddyfile)
 	req, err := http.NewRequest(method, path, body)
@@ -220,6 +255,7 @@ func killServers() {
 	for _, serv := range app.Servers {
 		serv.Stop(0)
 	}
+	serverWg.Wait()
 }
 
 const testAddr = "localhost:2015"

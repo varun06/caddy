@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -21,18 +22,23 @@ func init() {
 	router.DELETE("/:addr", auth(serverStop))
 }
 
+var serverWg sync.WaitGroup
+
 // serverList shows the list of servers and their information.
 func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	respondJSON(w, r, app.Servers, http.StatusOK)
 }
 
-// serversCreate creates servers using the contents of the request body. It does
-// not shut down any server instances unless "replace=true" is found in the query
-// string and the input specifies a server with the same host:port as an existing
+// serversCreate creates and starts servers using the contents of the request body.
+// It does not shut down any server instances UNLESS "replace=true" is found in the
+// query string and the input specifies a server with the same host:port as an existing
 // server. In that case, only the overlapping server is (gracefully) shut down
 // and will be restarted with the new configuration. If there is an error, not all
 // the new servers may be started. This handler is non-blocking.
 func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
 
@@ -62,6 +68,7 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	for _, serv := range app.Servers {
 		serv.Stop(app.ShutdownCutoff)
 	}
+	serverWg.Wait() // wait for servers to shut down
 	app.Servers = []*server.Server{}
 
 	// Create and start new servers
@@ -69,13 +76,7 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	if err != nil {
 		// Oh no! Roll back.
 		app.Servers = backup
-		for _, serv := range app.Servers {
-			app.Wg.Add(1)
-			go func(serv *server.Server) {
-				defer app.Wg.Done()
-				serv.Start() // hopefully this works
-			}(serv)
-		}
+		StartAllServers()
 		handleError(w, r, http.StatusBadRequest, err)
 		return
 	}
@@ -148,16 +149,16 @@ func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 		return err
 	}
 
-	return InitializeWithConfig(filename, bindings, replace)
+	return InitializeWithBindings(filename, bindings, replace)
 }
 
 // InitializeWithBindings is like InitializeReadConfig except that it
-// sets up servers using pre-made Config structs, organized by net
+// sets up servers using pre-made Config structs organized by net
 // address, rather than reading and parsing the config from scratch.
-// Call config.ArrangeBindings to organize configurations by address.
+// Call config.ArrangeBindings to get the proper 'bindings' input.
 // It is NOT safe to call this concurrently. Use app.ServersMutex.
 // This function is non-blocking - servers are started in separate goroutines.
-func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]*server.Config, replace bool) error {
+func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server.Config, replace bool) error {
 	// If replacing is not allowed, make sure each virtualhost is unique
 	// BEFORE we start the servers, so we don't end up with a partially
 	// fulfilled request.
@@ -206,20 +207,40 @@ func InitializeWithConfig(filename string, bindings map[*net.TCPAddr][]*server.C
 
 		// Initiate the new server that will operate the listener for this virtualhost
 		app.Servers = append(app.Servers, s)
-		app.Wg.Add(1)
-
-		go func() {
-			defer app.Wg.Done()
-
-			// Start the server
-			err := s.Start()
-
-			// Report the error, maybe
-			if !server.IsIgnorableError(err) {
-				log.Println(err) // client is probably long gone by now, so... just log it
-			}
-		}()
+		StartServer(s)
 	}
 
 	return nil
+}
+
+// StartAllServers correctly starts all the servers in
+// app.Servers. A call to this function is non-blocking.
+func StartAllServers() {
+	for _, s := range app.Servers {
+		StartServer(s)
+	}
+}
+
+// StartServer starts s correctly. This function is non-blocking
+// but will cause anything waiting on app.Wg (or serverWg) to
+// block until s is terminated.
+func StartServer(s *server.Server) {
+	app.Wg.Add(1)
+	serverWg.Add(1)
+	go func() {
+		defer app.Wg.Done()
+		defer serverWg.Done()
+		stopChan := s.StopChan()
+
+		// Start the server; block until stopped
+		err := s.Start()
+
+		// Report the error, maybe
+		if !server.IsIgnorableError(err) {
+			log.Println(err)
+		}
+
+		// Block until shutdown is complete
+		<-stopChan
+	}()
 }

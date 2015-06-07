@@ -64,13 +64,13 @@ type Graceful struct {
 	// the server to stop.
 	stopChan chan struct{}
 
+	// stopChanClosed indicates whether the stopChan has been closed.
+	stopChanClosed bool
+
 	// connections holds all connections managed by graceful
 	connections map[net.Conn]struct{}
 
-	// shutdownInitiated will be set to true once the shutdown process has begun.
-	shutdownInitiated bool
-
-	// This struct must be locked when modifying stopChan and interrupt fields.
+	// This struct must be locked when modifying stopChan, stopChanClosed, and interrupt fields.
 	sync.Mutex
 }
 
@@ -182,8 +182,9 @@ func (g *Graceful) Stop(timeout time.Duration) {
 // Callers should never close the stop channel.
 func (g *Graceful) StopChan() <-chan struct{} {
 	g.Lock()
-	if g.stopChan == nil {
+	if g.stopChan == nil || g.stopChanClosed {
 		g.stopChan = make(chan struct{})
+		g.stopChanClosed = false
 	}
 	g.Unlock()
 	return g.stopChan
@@ -241,7 +242,6 @@ func (g *Graceful) shutdown(shutdown chan chan struct{}, kill chan struct{}) {
 	// Request done notification
 	done := make(chan struct{})
 	shutdown <- done
-
 	if g.Timeout > 0 {
 		select {
 		case <-done:
@@ -254,6 +254,7 @@ func (g *Graceful) shutdown(shutdown chan chan struct{}, kill chan struct{}) {
 
 	// Close the stopChan to wake up any blocked goroutines.
 	if g.stopChan != nil {
+		g.stopChanClosed = true
 		close(g.stopChan)
 	}
 }
