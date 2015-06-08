@@ -72,11 +72,9 @@ func main() {
 		}
 
 		// Start your engines!
-		app.ServersMutex.Lock()
 		err = admin.InitializeWithBindings(allConfigs[0].ConfigFile, addresses, false)
-		app.ServersMutex.Unlock()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err) // kill whole process to avoid half-alive zombie server
 		}
 
 		// Show initialization output
@@ -84,9 +82,6 @@ func main() {
 			var checkedFdLimit bool
 			for addr, configs := range addresses {
 				for _, conf := range configs {
-					// Print address of site
-					fmt.Println(conf.Address())
-
 					// Note if non-localhost site resolves to loopback interface
 					if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
 						fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",

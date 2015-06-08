@@ -51,9 +51,10 @@ type Graceful struct {
 	// must not be set directly.
 	ConnState func(net.Conn, http.ConnState)
 
-	// ShutdownCallback is an optional callback function that is called
-	// when shutdown is initiated. It can be used to notify the client
-	// side of long lived connections (e.g. websockets) to reconnect.
+	// ShutdownCallback is an optional callback function that is called when
+	// shutdown is first initiated. It can be used, for example, to notify the
+	// clients of long-lived connections (e.g. websockets) to reconnect.
+	// This callback is executed at the BEGINNING of shutdown, not end.
 	ShutdownCallback func()
 
 	// interrupt signals the listener to stop serving connections,
@@ -61,7 +62,9 @@ type Graceful struct {
 	interrupt chan os.Signal
 
 	// stopChan is the channel on which callers may block while waiting for
-	// the server to stop.
+	// the server to stop. It unblocks once the server is stopped.
+	// Do not wait on this channel unless the listener has surely been
+	// started. If the listener was not started, stopChan blocks forever.
 	stopChan chan struct{}
 
 	// stopChanClosed indicates whether the stopChan has been closed.
@@ -128,6 +131,7 @@ func (g *Graceful) ListenAndServeTLS(certFile, keyFile string) error {
 }
 
 // Serve is equivalent to http.Server.Serve with graceful shutdown enabled.
+// It returns after shutdown has completed.
 func (g *Graceful) Serve(listener net.Listener) error {
 	// Track connection state
 	add := make(chan net.Conn)
@@ -163,7 +167,9 @@ func (g *Graceful) Serve(listener net.Listener) error {
 }
 
 // Stop instructs the type to halt operations and close
-// the stop channel when it is finished.
+// the stop channel when it is finished. It is a non-blocking
+// function, so actual shutdown may complete after this
+// function returns.
 //
 // timeout is grace period for which to wait before shutting
 // down the server. The timeout value passed here will override the
@@ -180,6 +186,9 @@ func (g *Graceful) Stop(timeout time.Duration) {
 // StopChan gets the stop channel which will block until
 // stopping has completed, at which point it is closed.
 // Callers should never close the stop channel.
+//
+// Only wait on this channel if the listener was started,
+// otherwise it will block forever.
 func (g *Graceful) StopChan() <-chan struct{} {
 	g.Lock()
 	if g.stopChan == nil || g.stopChanClosed {

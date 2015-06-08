@@ -41,7 +41,7 @@ func rootSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	vh.Stop()
 	err := vh.BuildStack()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err) // TODO
 	}
 	vh.Start()
 

@@ -36,9 +36,6 @@ func serverList(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // and will be restarted with the new configuration. If there is an error, not all
 // the new servers may be started. This handler is non-blocking.
 func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
 
@@ -54,29 +51,34 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 // serversReplace gracefully shuts down all listening servers and starts up
 // new ones based on the contents of the configuration that is found in the
 // response body. If there are any errors, the configuration is rolled back
-// so the downtime is minimal (inperceptably short). It is possible for the
+// so the downtime is no more than a couple seconds. It is possible for the
 // failover to fail, in which case the failing server will not launch. This
 // handler is partially blocking.
 func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
 	// Keep current configuration in case we need to roll back
+	app.ServersMutex.Lock()
 	backup := app.Servers
+	app.ServersMutex.Unlock()
 
 	// Delete all existing servers
-	for _, serv := range app.Servers {
-		serv.Stop(app.ShutdownCutoff)
-	}
-	serverWg.Wait() // wait for servers to shut down
+	app.ServersMutex.Lock()
+	StopAllServers()
 	app.Servers = []*server.Server{}
+	app.ServersMutex.Unlock()
 
 	// Create and start new servers
 	err := InitializeReadConfig("HTTP_POST", r.Body, false)
+	// TODO: Health check is needed, in case binding the listening socket failed.
 	if err != nil {
 		// Oh no! Roll back.
-		app.Servers = backup
-		StartAllServers()
+		go func() {
+			app.ServersMutex.Lock()
+			StopAllServers()
+			app.Servers = backup
+			StartAllServers() // hopefully this works
+			app.ServersMutex.Unlock()
+		}()
+
 		handleError(w, r, http.StatusBadRequest, err)
 		return
 	}
@@ -110,14 +112,6 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	if len(srv.Vhosts) == 1 {
 		// Graceful shutdown
 		srv.Stop(app.ShutdownCutoff)
-
-		// Remove it from the list of servers
-		for i, s := range app.Servers {
-			if s == srv {
-				app.Servers = append(app.Servers[:i], app.Servers[i+1:]...)
-				break
-			}
-		}
 	} else {
 		// Stopping a whole server will automatically call Stop
 		// on all its virtualhosts, but we only stop the server
@@ -134,8 +128,9 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // servers. If replace is true, a server that has the same host and port
 // as a new one will be replaced with the new one, no questions asked.
 // If replace is false, the same host:port will conflict and cause an
-// error. It is NOT safe to call this concurrently. Use app.ServersMutex.
-// This function is non-blocking - servers are started in separate goroutines.
+// error.
+//
+// This function is safe for concurrent use.
 func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 	// Parse and load all configurations
 	configs, err := config.Load(filename, body)
@@ -156,9 +151,12 @@ func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
 // sets up servers using pre-made Config structs organized by net
 // address, rather than reading and parsing the config from scratch.
 // Call config.ArrangeBindings to get the proper 'bindings' input.
-// It is NOT safe to call this concurrently. Use app.ServersMutex.
-// This function is non-blocking - servers are started in separate goroutines.
+//
+// This function is safe for concurrent use.
 func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server.Config, replace bool) error {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
 	// If replacing is not allowed, make sure each virtualhost is unique
 	// BEFORE we start the servers, so we don't end up with a partially
 	// fulfilled request.
@@ -194,7 +192,7 @@ func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server
 					existingServer.Vhosts[cfg.Host] = vh
 					err := vh.Start()
 					if err != nil {
-						log.Println(err)
+						return err
 					}
 				}
 				break
@@ -215,6 +213,8 @@ func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server
 
 // StartAllServers correctly starts all the servers in
 // app.Servers. A call to this function is non-blocking.
+//
+// This function is NOT safe for concurrent use.
 func StartAllServers() {
 	for _, s := range app.Servers {
 		StartServer(s)
@@ -223,24 +223,48 @@ func StartAllServers() {
 
 // StartServer starts s correctly. This function is non-blocking
 // but will cause anything waiting on app.Wg (or serverWg) to
-// block until s is terminated.
+// block until s is terminated. It does NOT add s to the
+// app.Servers slice, but it WILL delete s from the slice
+// after the server shuts down (if it is in the slice).
+//
+// This function is safe for concurrent use.
 func StartServer(s *server.Server) {
 	app.Wg.Add(1)
 	serverWg.Add(1)
-	go func() {
-		defer app.Wg.Done()
-		defer serverWg.Done()
-		stopChan := s.StopChan()
 
-		// Start the server; block until stopped
+	go func() {
+		defer func() {
+			app.Wg.Done()
+			serverWg.Done()
+
+			// Remove s from the list of servers
+			app.ServersMutex.Lock()
+			defer app.ServersMutex.Unlock()
+			for i, srv := range app.Servers {
+				if srv == s {
+					app.Servers = append(app.Servers[:i], app.Servers[i+1:]...)
+					break
+				}
+			}
+		}()
+
+		// Start the server; blocks until stopped completely
 		err := s.Start()
 
 		// Report the error, maybe
 		if !server.IsIgnorableError(err) {
 			log.Println(err)
 		}
-
-		// Block until shutdown is complete
-		<-stopChan
 	}()
+}
+
+// StopAllServers stops all servers gracefully.
+// This function is non-blocking.
+//
+// This function is NOT safe for concurrent use.
+func StopAllServers() {
+	for _, serv := range app.Servers {
+		serv.Stop(app.ShutdownCutoff)
+	}
+	serverWg.Wait() // wait for servers to shut down
 }

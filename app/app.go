@@ -89,17 +89,25 @@ func init() {
 	// Shut down all servers gracefully when the process is killed
 	go func() {
 		interrupt := make(chan os.Signal)
-		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
-		<-interrupt
 
-		ServersMutex.Lock()
-		for _, s := range Servers {
-			s.Stop(ShutdownCutoff)
-		}
-		ServersMutex.Unlock()
+		for i := 0; i >= 0; i++ {
+			signal.Notify(interrupt, os.Interrupt, os.Kill)
+			<-interrupt
 
-		if APIServer != nil {
-			APIServer.Stop(ShutdownCutoff)
+			if i > 0 {
+				// second interrupt is force-quit
+				os.Exit(1)
+			}
+
+			ServersMutex.Lock()
+			for _, s := range Servers {
+				s.Stop(ShutdownCutoff)
+			}
+			ServersMutex.Unlock()
+
+			if APIServer != nil {
+				APIServer.Stop(ShutdownCutoff)
+			}
 		}
 	}()
 }

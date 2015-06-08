@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 
@@ -46,7 +47,7 @@ func New(addr string, configs []*Config, tls bool) (*Server, error) {
 
 	for _, conf := range configs {
 		if _, exists := s.Vhosts[conf.Host]; exists {
-			return nil, fmt.Errorf("Cannot serve %s - host already defined for address %s", conf.Address(), s.Address)
+			return nil, fmt.Errorf("duplicate host definition for '%s' on address %s", conf.Host, s.Address)
 		}
 
 		vh := &VirtualHost{Config: conf}
@@ -63,7 +64,7 @@ func New(addr string, configs []*Config, tls bool) (*Server, error) {
 	return s, nil
 }
 
-// Start starts the server. It blocks until the server quits.
+// Start starts the server. It blocks until the server quits and shutdown is complete.
 func (s *Server) Start() error {
 	if s.HTTP2 {
 		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
@@ -71,10 +72,15 @@ func (s *Server) Start() error {
 	}
 
 	// Run startup functions or make other preparations
-	for _, vh := range s.Vhosts {
+	for key, vh := range s.Vhosts {
 		if err := vh.Start(); err != nil {
-			return err
+			log.Printf("[%s] %s", vh.Config.Address(), err.Error())
+			delete(s.Vhosts, key)
 		}
+	}
+
+	if len(s.Vhosts) == 0 {
+		return fmt.Errorf("no hosts to serve")
 	}
 
 	if s.TLS {
@@ -83,9 +89,9 @@ func (s *Server) Start() error {
 			tlsConfigs = append(tlsConfigs, vh.Config.TLS)
 		}
 		return ListenAndServeTLSWithSNI(s, tlsConfigs)
+	} else {
+		return s.ListenAndServe()
 	}
-
-	return s.ListenAndServe()
 }
 
 // ListenAndServeTLSWithSNI serves TLS with Server Name Indication (SNI) support, which allows

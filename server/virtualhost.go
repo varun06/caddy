@@ -56,6 +56,7 @@ func (vh *VirtualHost) Start() error {
 			return err
 		}
 	}
+	log.Printf("+%s\n", vh.Config.Address())
 	return nil
 }
 
@@ -68,4 +69,5 @@ func (vh *VirtualHost) Stop() {
 			log.Println(err)
 		}
 	}
+	log.Printf("-%s\n", vh.Config.Address())
 }
