@@ -56,7 +56,7 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 // response body. If there are any errors, the configuration is rolled back
 // so the downtime is minimal (inperceptably short). It is possible for the
 // failover to fail, in which case the failing server will not launch. This
-// handler is non-blocking.
+// handler is partially blocking.
 func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	app.ServersMutex.Lock()
 	defer app.ServersMutex.Unlock()
