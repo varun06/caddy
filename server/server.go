@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/bradfitz/http2"
 )
@@ -18,11 +19,13 @@ import (
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
-	*Graceful `json:"-"`
-	HTTP2     bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	Address   string                  // the actual address for net.Listen to listen on
-	TLS       bool                    // whether this server is serving all HTTPS hosts or not
-	Vhosts    map[string]*VirtualHost // virtual hosts keyed by their address
+	sync.Mutex
+	*Graceful  `json:"-"`
+	HTTP2      bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	Address    string                  // the actual address for net.Listen to listen on
+	TLS        bool                    // whether this server is serving all HTTPS hosts or not
+	Vhosts     map[string]*VirtualHost // virtual hosts keyed by their address
+	ListenChan chan struct{}           `json:"-"`
 }
 
 // New creates a new Server which will bind to addr and serve
@@ -66,6 +69,10 @@ func New(addr string, configs []*Config, tls bool) (*Server, error) {
 
 // Start starts the server. It blocks until the server quits and shutdown is complete.
 func (s *Server) Start() error {
+	s.Lock()
+	s.ListenChan = make(chan struct{})
+	s.Unlock()
+
 	if s.HTTP2 {
 		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
 		http2.ConfigureServer(s.Server, nil)
@@ -83,6 +90,9 @@ func (s *Server) Start() error {
 		return fmt.Errorf("no hosts to serve")
 	}
 
+	// signal that the listener should be active momentarily
+	close(s.ListenChan)
+
 	if s.TLS {
 		var tlsConfigs []TLSConfig
 		for _, vh := range s.Vhosts {
@@ -91,6 +101,48 @@ func (s *Server) Start() error {
 		return ListenAndServeTLSWithSNI(s, tlsConfigs)
 	} else {
 		return s.ListenAndServe()
+	}
+}
+
+// ServeHTTP is the entry point for every request to the address that s
+// is bound to. It acts as a multiplexer for the requests hostname as
+// defined in the Host header so that the correct VirtualHost
+// (configuration and middleware stack) will handle the request.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		// In case the user doesn't enable error middleware, we still
+		// need to make sure that we stay alive up here
+		if rec := recover(); rec != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError),
+				http.StatusInternalServerError)
+		}
+	}()
+
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host // oh well
+	}
+
+	// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
+	if _, ok := s.Vhosts[host]; !ok {
+		if _, ok2 := s.Vhosts["0.0.0.0"]; ok2 {
+			host = "0.0.0.0"
+		}
+	}
+
+	if vh, ok := s.Vhosts[host]; ok {
+		w.Header().Set("Server", "Caddy")
+
+		status, _ := vh.Stack.ServeHTTP(w, r)
+
+		// Fallback error response in case error handling wasn't chained in
+		if status >= 400 {
+			w.WriteHeader(status)
+			fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
+		}
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, "No such host at %s", s.Address)
 	}
 }
 
@@ -184,46 +236,4 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 	}
 
 	return nil
-}
-
-// ServeHTTP is the entry point for every request to the address that s
-// is bound to. It acts as a multiplexer for the requests hostname as
-// defined in the Host header so that the correct VirtualHost
-// (configuration and middleware stack) will handle the request.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		// In case the user doesn't enable error middleware, we still
-		// need to make sure that we stay alive up here
-		if rec := recover(); rec != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError),
-				http.StatusInternalServerError)
-		}
-	}()
-
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		host = r.Host // oh well
-	}
-
-	// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
-	if _, ok := s.Vhosts[host]; !ok {
-		if _, ok2 := s.Vhosts["0.0.0.0"]; ok2 {
-			host = "0.0.0.0"
-		}
-	}
-
-	if vh, ok := s.Vhosts[host]; ok {
-		w.Header().Set("Server", "Caddy")
-
-		status, _ := vh.Stack.ServeHTTP(w, r)
-
-		// Fallback error response in case error handling wasn't chained in
-		if status >= 400 {
-			w.WriteHeader(status)
-			fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
-		}
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "No such host at %s", s.Address)
-	}
 }

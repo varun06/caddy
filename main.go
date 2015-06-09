@@ -72,7 +72,8 @@ func main() {
 		}
 
 		// Start your engines!
-		err = admin.InitializeWithBindings(allConfigs[0].ConfigFile, addresses, false)
+		// TODO: Health check?
+		_, err = admin.InitializeWithBindings(addresses, false)
 		if err != nil {
 			log.Fatal(err) // kill whole process to avoid half-alive zombie server
 		}

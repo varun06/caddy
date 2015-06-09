@@ -1,12 +1,15 @@
 package admin
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/caddy/app"
@@ -39,7 +42,7 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 	r.ParseForm()
 	replace := r.Form.Get("replace") == "true"
 
-	err := InitializeReadConfig("HTTP_POST", r.Body, replace)
+	_, err := InitializeReadConfig("HTTP_POST", r.Body, replace)
 	if err != nil {
 		handleError(w, r, http.StatusBadRequest, err)
 		return
@@ -53,8 +56,18 @@ func serversCreate(w http.ResponseWriter, r *http.Request, p httprouter.Params) 
 // response body. If there are any errors, the configuration is rolled back
 // so the downtime is no more than a couple seconds. It is possible for the
 // failover to fail, in which case the failing server will not launch. This
-// handler is partially blocking.
+// handler is not blocking.
 func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	reqBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		handleError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	if len(reqBody) == 0 {
+		handleError(w, r, http.StatusBadRequest, errors.New("empty request body"))
+		return
+	}
+
 	// Keep current configuration in case we need to roll back
 	app.ServersMutex.Lock()
 	backup := app.Servers
@@ -67,20 +80,49 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	app.ServersMutex.Unlock()
 
 	// Create and start new servers
-	err := InitializeReadConfig("HTTP_POST", r.Body, false)
-	// TODO: Health check is needed, in case binding the listening socket failed.
+	servers, err := InitializeReadConfig("HTTP_POST", bytes.NewBuffer(reqBody), false)
 	if err != nil {
-		// Oh no! Roll back.
-		go func() {
-			app.ServersMutex.Lock()
-			StopAllServers()
-			app.Servers = backup
-			StartAllServers() // hopefully this works
-			app.ServersMutex.Unlock()
-		}()
-
+		// These synchronous errors are easy! Roll back.
+		rollback(backup)
 		handleError(w, r, http.StatusBadRequest, err)
 		return
+	} else {
+		// Health check is required to verify successful socket bind.
+		// Best we can do is wait some time and do a simple GET request.
+		// We use sync.Once to ensure that the rollback only happens
+		// once, since we verify each server independently.
+
+		var once sync.Once
+
+		app.ServersMutex.Lock()
+		defer app.ServersMutex.Unlock()
+
+		for _, srv := range servers {
+			go func() {
+				// Wait for it to finish starting up
+				srv.Lock()
+				<-srv.ListenChan
+				srv.Unlock()
+
+				// Give socket a moment to bind
+				time.Sleep(healthCheckDelay)
+
+				// Health check
+				resp, err := http.Get(srv.Address)
+				if err != nil {
+					for _, vh := range srv.Vhosts {
+						// These were started without knowing the socket wouldn't bind
+						vh.Stop()
+					}
+
+					// Roll back to last working configuration
+					once.Do(func() { rollback(backup) })
+				}
+				if resp != nil {
+					resp.Body.Close()
+				}
+			}()
+		}
 	}
 
 	w.WriteHeader(http.StatusAccepted)
@@ -131,29 +173,28 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // error.
 //
 // This function is safe for concurrent use.
-func InitializeReadConfig(filename string, body io.Reader, replace bool) error {
+func InitializeReadConfig(filename string, body io.Reader, replace bool) ([]*server.Server, error) {
 	// Parse and load all configurations
 	configs, err := config.Load(filename, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Arrange servers by bind address (resolves hostnames)
 	bindings, err := config.ArrangeBindings(configs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return InitializeWithBindings(filename, bindings, replace)
+	return InitializeWithBindings(bindings, replace)
 }
 
 // InitializeWithBindings is like InitializeReadConfig except that it
 // sets up servers using pre-made Config structs organized by net
 // address, rather than reading and parsing the config from scratch.
 // Call config.ArrangeBindings to get the proper 'bindings' input.
-//
 // This function is safe for concurrent use.
-func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server.Config, replace bool) error {
+func InitializeWithBindings(bindings map[*net.TCPAddr][]*server.Config, replace bool) ([]*server.Server, error) {
 	app.ServersMutex.Lock()
 	defer app.ServersMutex.Unlock()
 
@@ -165,19 +206,21 @@ func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server
 			for _, existingServer := range app.Servers {
 				for _, cfg := range configs {
 					if _, vhostExists := existingServer.Vhosts[cfg.Host]; vhostExists {
-						return errors.New(cfg.Host + " already listening at " + addr.String())
+						return nil, errors.New(cfg.Host + " already listening at " + addr.String())
 					}
 				}
 			}
 		}
 	}
 
+	var serversCopy []*server.Server
+
 	// For every listener address, we need to iterate its configs/virtualhosts.
 	for addr, configs := range bindings {
 		// Create a server that will build the virtual host
 		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		s.HTTP2 = app.Http2 // TODO: This setting is temporary
 
@@ -192,7 +235,7 @@ func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server
 					existingServer.Vhosts[cfg.Host] = vh
 					err := vh.Start()
 					if err != nil {
-						return err
+						return serversCopy, err
 					}
 				}
 				break
@@ -204,11 +247,11 @@ func InitializeWithBindings(filename string, bindings map[*net.TCPAddr][]*server
 		}
 
 		// Initiate the new server that will operate the listener for this virtualhost
-		app.Servers = append(app.Servers, s)
+		app.Servers, serversCopy = append(app.Servers, s), append(serversCopy, s)
 		StartServer(s)
 	}
 
-	return nil
+	return serversCopy, nil
 }
 
 // StartAllServers correctly starts all the servers in
@@ -268,3 +311,21 @@ func StopAllServers() {
 	}
 	serverWg.Wait() // wait for servers to shut down
 }
+
+// rollback stops all servers, replaces them with
+// the ones in backup, and starts them. There is no
+// error reporting. This function is safe to use
+// concurrently and is non-blocking.
+func rollback(backup []*server.Server) {
+	go func() {
+		app.ServersMutex.Lock()
+		defer app.ServersMutex.Unlock()
+		StopAllServers()
+		app.Servers = backup
+		StartAllServers() // hopefully this works
+	}()
+}
+
+// healthCheckDelay is how long to wait between the time a server starts
+// listening and performing a health check.
+const healthCheckDelay = 1 * time.Second

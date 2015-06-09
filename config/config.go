@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 
 	"github.com/mholt/caddy/app"
@@ -26,10 +25,6 @@ const (
 
 func Load(filename string, input io.Reader) ([]*server.Config, error) {
 	var configs []*server.Config
-
-	// turn off timestamp for parsing
-	flags := log.Flags()
-	log.SetFlags(0)
 
 	serverBlocks, err := parse.ServerBlocks(filename, input)
 	if err != nil {
@@ -82,9 +77,6 @@ func Load(filename string, input io.Reader) ([]*server.Config, error) {
 
 		configs = append(configs, config)
 	}
-
-	// restore logging settings
-	log.SetFlags(flags)
 
 	return configs, nil
 }
