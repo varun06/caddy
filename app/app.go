@@ -48,6 +48,9 @@ var (
 
 	// The API server
 	APIServer *server.Graceful
+
+	// Path to the config file used at startup, if any
+	ConfigPath string
 )
 
 // SetCPU parses string cpu and sets GOMAXPROCS

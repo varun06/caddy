@@ -72,10 +72,9 @@ func main() {
 		}
 
 		// Start your engines!
-		// TODO: Health check?
 		_, err = admin.InitializeWithBindings(addresses, false)
 		if err != nil {
-			log.Fatal(err) // kill whole process to avoid half-alive zombie server
+			log.Println(err)
 		}
 
 		// Show initialization output
@@ -140,6 +139,8 @@ func loadConfigs() ([]*server.Config, error) {
 			return nil, err
 		}
 		defer file.Close()
+
+		app.ConfigPath = conf
 		return config.Load(path.Base(conf), file)
 	}
 
@@ -170,5 +171,6 @@ func loadConfigs() ([]*server.Config, error) {
 	}
 	defer file.Close()
 
+	app.ConfigPath = config.DefaultConfigFile
 	return config.Load(config.DefaultConfigFile, file)
 }

@@ -32,6 +32,8 @@ func TestServerList(t *testing.T) {
 }
 
 func TestServersCreate(t *testing.T) {
+	defer killServers()
+
 	caddyfile := testAddr
 	newServerAddr := "127.0.0.1:3932"
 	reqCaddyfile := newServerAddr + `
@@ -64,11 +66,11 @@ func TestServersCreate(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close() // really important, or deadlock! (even though we don't use it)
 	}
-
-	killServers()
 }
 
 func TestServersReplace(t *testing.T) {
+	defer killServers()
+
 	caddyfile := testAddr
 	newServerAddr := "127.0.0.1:3933"
 	newCaddyfile := newServerAddr + `
@@ -76,10 +78,13 @@ func TestServersReplace(t *testing.T) {
 	w, r, p := setUp(t, caddyfile, "PUT", "/", strings.NewReader(newCaddyfile))
 
 	serversReplace(w, r, p)
+	time.Sleep(healthCheckDelay + time.Second)
 
 	if expected, actual := http.StatusAccepted, w.Code; expected != actual {
 		t.Errorf("Expected status %d, got %d", expected, actual)
 	}
+
+	app.ServersMutex.Lock()
 	if expected, actual := 1, len(app.Servers); expected != actual {
 		t.Fatalf("Expected %d server, got %d", expected, actual)
 	}
@@ -92,6 +97,7 @@ func TestServersReplace(t *testing.T) {
 	if app.Servers[0].Vhosts["127.0.0.1"].Config.HandlerMap["gzip"] == nil {
 		t.Error("Expected the servers be properly configured, but they weren't")
 	}
+	app.ServersMutex.Unlock()
 
 	// Try a real request to the replacement server
 	resp, err := http.Get("http://" + newServerAddr)
@@ -101,11 +107,11 @@ func TestServersReplace(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close()
 	}
-
-	killServers()
 }
 
 func TestServersReplaceRollback(t *testing.T) {
+	defer killServers()
+
 	caddyfile := testAddr
 	newServerAddr := "127.0.0.1:3934"
 	newCaddyfile := newServerAddr + `
@@ -114,8 +120,9 @@ func TestServersReplaceRollback(t *testing.T) {
 	StartServer(app.Servers[0])
 
 	serversReplace(w, r, p)
+	time.Sleep(healthCheckDelay + time.Second)
 
-	if expected, actual := http.StatusBadRequest, w.Code; expected != actual {
+	if expected, actual := http.StatusAccepted, w.Code; expected != actual {
 		t.Errorf("Expected status %d, got %d", expected, actual)
 	}
 
@@ -136,11 +143,11 @@ func TestServersReplaceRollback(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close()
 	}
-
-	killServers()
 }
 
-func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
+func TestServersReplaceRollbackFromSocketFailure(t *testing.T) {
+	defer killServers()
+
 	caddyfile := testAddr
 	newServerAddr := "127.0.0.1:80" // use low port so we don't have permission to bind to it
 	newCaddyfile := newServerAddr
@@ -153,9 +160,6 @@ func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", expected, actual)
 	}
 
-	// By now, failover should be executing; wait for health check to occur
-	time.Sleep(healthCheckDelay + (1 * time.Second)) // I hate sleeping in tests, but I can't find a better way to do this
-
 	// Make sure new server is NOT started
 	resp, err := http.Get("http://" + newServerAddr)
 	if err == nil {
@@ -165,6 +169,9 @@ func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
 		resp.Body.Close()
 	}
 
+	// By now, failover should be executing; wait for health check to occur
+	time.Sleep(healthCheckDelay + time.Second) // I hate sleeping in tests, but I can't find a better way to do this
+
 	// Make sure old server IS restarted.
 	resp, err = http.Get("http://" + testAddr)
 	if err != nil {
@@ -173,8 +180,6 @@ func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close()
 	}
-
-	killServers()
 }
 
 func TestServerInfo(t *testing.T) {
@@ -195,6 +200,8 @@ func TestServerInfo(t *testing.T) {
 }
 
 func TestServerStop(t *testing.T) {
+	defer killServers()
+
 	testServerAddr := "localhost:6099"
 	caddyfile := testServerAddr
 	w, r, p := setUp(t, caddyfile, "DELETE", "/"+testServerAddr, nil)
@@ -224,8 +231,6 @@ func TestServerStop(t *testing.T) {
 	case <-time.After(app.ShutdownCutoff):
 		t.Errorf("Shutdown callback was not executed")
 	}
-
-	killServers()
 }
 
 //

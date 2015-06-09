@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -68,29 +69,13 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 		return
 	}
 
-	// Keep current configuration in case we need to roll back
-	app.ServersMutex.Lock()
-	backup := app.Servers
-	app.ServersMutex.Unlock()
-
-	// Delete all existing servers
-	app.ServersMutex.Lock()
-	StopAllServers()
-	app.Servers = []*server.Server{}
-	app.ServersMutex.Unlock()
-
-	// Create and start new servers
-	servers, err := InitializeReadConfig("HTTP_POST", bytes.NewBuffer(reqBody), false)
-	if err != nil {
-		// These synchronous errors are easy! No health check needed,
-		// since server did not try to start. Just roll back.
-		rollback(backup)
-		handleError(w, r, http.StatusBadRequest, err)
-		return
-	} else {
-		// Health check required to verify successful socket bind
-		healthCheckRollback(servers, backup)
-	}
+	go func() {
+		err := ReplaceAllServers("HTTP_POST", bytes.NewBuffer(reqBody))
+		if err != nil {
+			// client has already left by now, so just log it
+			log.Println(err)
+		}
+	}()
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -275,14 +260,45 @@ func StartServer(s *server.Server) {
 }
 
 // StopAllServers stops all servers gracefully.
-// This function is non-blocking.
-//
-// This function is NOT safe for concurrent use.
+// This function is non-blocking, and it is
+// NOT safe for concurrent use.
 func StopAllServers() {
 	for _, serv := range app.Servers {
 		serv.Stop(app.ShutdownCutoff)
 	}
 	serverWg.Wait() // wait for servers to shut down
+}
+
+// ReplaceAllServers gracefully shuts down all the servers and starts
+// new ones using the configuration from input. This function is safe
+// to use concurrently. It blocks long enough for the servers to shut
+// down. If an error occurs before attempting to start the server, it
+// will be returned.
+func ReplaceAllServers(inputName string, input io.Reader) error {
+	// Keep current configuration in case we need to roll back
+	app.ServersMutex.Lock()
+	backup := app.Servers
+	app.ServersMutex.Unlock()
+
+	// Delete all existing servers
+	app.ServersMutex.Lock()
+	StopAllServers()
+	app.Servers = []*server.Server{}
+	app.ServersMutex.Unlock()
+
+	// Create and start new servers
+	servers, err := InitializeReadConfig(inputName, input, false)
+	if err != nil {
+		// No health check needed, since server did not try to start.
+		// Just roll back.
+		rollback(backup)
+		return err
+	} else {
+		// Health check required to verify successful socket bind
+		healthCheckRollback(servers, backup)
+	}
+
+	return nil
 }
 
 // healthcheckRollback performs a health check on servers, and if the check
@@ -305,8 +321,15 @@ func healthCheckRollback(servers []*server.Server, backup []*server.Server) {
 			time.Sleep(healthCheckDelay)
 
 			// Health check
-			resp, err := http.Get(srv.Address)
+			addr := srv.Address
+			if srv.TLS {
+				addr = "https://" + addr
+			} else {
+				addr = "http://" + addr
+			}
+			resp, err := http.Get(addr)
 			if err != nil {
+				fmt.Println("error!", err)
 				for _, vh := range srv.Vhosts {
 					// These were started without knowing the socket wouldn't bind
 					vh.Stop()
@@ -327,6 +350,7 @@ func healthCheckRollback(servers []*server.Server, backup []*server.Server) {
 // error reporting. This function is safe to use
 // concurrently and is non-blocking.
 func rollback(backup []*server.Server) {
+	log.Println("Rolling back to last good configuration")
 	go func() {
 		app.ServersMutex.Lock()
 		defer app.ServersMutex.Unlock()
