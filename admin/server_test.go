@@ -140,6 +140,43 @@ func TestServersReplaceRollback(t *testing.T) {
 	killServers()
 }
 
+func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
+	caddyfile := testAddr
+	newServerAddr := "127.0.0.1:80" // use low port so we don't have permission to bind to it
+	newCaddyfile := newServerAddr
+	w, r, p := setUp(t, caddyfile, "PUT", "/", strings.NewReader(newCaddyfile))
+	StartServer(app.Servers[0])
+
+	serversReplace(w, r, p)
+
+	if expected, actual := http.StatusAccepted, w.Code; expected != actual {
+		t.Errorf("Expected status %d, got %d", expected, actual)
+	}
+
+	// By now, failover should be executing; wait for health check to occur
+	time.Sleep(healthCheckDelay) // I hate sleeping in tests, but I can't find a better way to do this
+
+	// Make sure new server is NOT started
+	resp, err := http.Get("http://" + newServerAddr)
+	if err == nil {
+		t.Errorf("Expected GET request to new listener %s to fail, but no error (status %s)", newServerAddr, resp.Status)
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	// Make sure old server IS restarted.
+	resp, err = http.Get("http://" + testAddr)
+	if err != nil {
+		t.Errorf("Expected GET request to fallback listener %s to succeed, but error was: %v", testAddr, err)
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	killServers()
+}
+
 func TestServerInfo(t *testing.T) {
 	caddyfile := testAddr
 	w, r, p := setUp(t, caddyfile, "GET", "/"+testAddr, nil)

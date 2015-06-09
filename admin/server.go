@@ -82,47 +82,14 @@ func serversReplace(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	// Create and start new servers
 	servers, err := InitializeReadConfig("HTTP_POST", bytes.NewBuffer(reqBody), false)
 	if err != nil {
-		// These synchronous errors are easy! Roll back.
+		// These synchronous errors are easy! No health check needed,
+		// since server did not try to start. Just roll back.
 		rollback(backup)
 		handleError(w, r, http.StatusBadRequest, err)
 		return
 	} else {
-		// Health check is required to verify successful socket bind.
-		// Best we can do is wait some time and do a simple GET request.
-		// We use sync.Once to ensure that the rollback only happens
-		// once, since we verify each server independently.
-
-		var once sync.Once
-
-		app.ServersMutex.Lock()
-		defer app.ServersMutex.Unlock()
-
-		for _, srv := range servers {
-			go func() {
-				// Wait for it to finish starting up
-				srv.Lock()
-				<-srv.ListenChan
-				srv.Unlock()
-
-				// Give socket a moment to bind
-				time.Sleep(healthCheckDelay)
-
-				// Health check
-				resp, err := http.Get(srv.Address)
-				if err != nil {
-					for _, vh := range srv.Vhosts {
-						// These were started without knowing the socket wouldn't bind
-						vh.Stop()
-					}
-
-					// Roll back to last working configuration
-					once.Do(func() { rollback(backup) })
-				}
-				if resp != nil {
-					resp.Body.Close()
-				}
-			}()
-		}
+		// Health check required to verify successful socket bind
+		healthCheckRollback(servers, backup)
 	}
 
 	w.WriteHeader(http.StatusAccepted)
@@ -170,7 +137,9 @@ func serverStop(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 // servers. If replace is true, a server that has the same host and port
 // as a new one will be replaced with the new one, no questions asked.
 // If replace is false, the same host:port will conflict and cause an
-// error.
+// error. It returns a list of the servers that are to be started so that
+// a health check may be performed. Note that this function may return
+// the servers have started.
 //
 // This function is safe for concurrent use.
 func InitializeReadConfig(filename string, body io.Reader, replace bool) ([]*server.Server, error) {
@@ -193,6 +162,10 @@ func InitializeReadConfig(filename string, body io.Reader, replace bool) ([]*ser
 // sets up servers using pre-made Config structs organized by net
 // address, rather than reading and parsing the config from scratch.
 // Call config.ArrangeBindings to get the proper 'bindings' input.
+// It returns the list of servers that were created, but remember that
+// this function may return before the servers are finished starting.
+// You may use the list of servers to perform a health check.
+//
 // This function is safe for concurrent use.
 func InitializeWithBindings(bindings map[*net.TCPAddr][]*server.Config, replace bool) ([]*server.Server, error) {
 	app.ServersMutex.Lock()
@@ -310,6 +283,43 @@ func StopAllServers() {
 		serv.Stop(app.ShutdownCutoff)
 	}
 	serverWg.Wait() // wait for servers to shut down
+}
+
+// healthcheckRollback performs a health check on servers, and if the check
+// fails, it rolls back the configuration to backup. This function is safe
+// to use concurrently.
+func healthCheckRollback(servers []*server.Server, backup []*server.Server) {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
+
+	var once sync.Once // so we don't roll back more than once
+
+	for _, srv := range servers {
+		go func(srv *server.Server) {
+			// Wait for it to finish starting up
+			srv.Lock()
+			<-srv.ListenChan
+			srv.Unlock()
+
+			// Give socket a moment to bind
+			time.Sleep(healthCheckDelay)
+
+			// Health check
+			resp, err := http.Get(srv.Address)
+			if err != nil {
+				for _, vh := range srv.Vhosts {
+					// These were started without knowing the socket wouldn't bind
+					vh.Stop()
+				}
+
+				// Roll back to last working configuration
+				once.Do(func() { rollback(backup) })
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}(srv)
+	}
 }
 
 // rollback stops all servers, replaces them with
