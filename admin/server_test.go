@@ -68,7 +68,7 @@ func TestServersCreate(t *testing.T) {
 	killServers()
 }
 
-func asdfTestServersReplace(t *testing.T) {
+func TestServersReplace(t *testing.T) {
 	caddyfile := testAddr
 	newServerAddr := "127.0.0.1:3933"
 	newCaddyfile := newServerAddr + `
@@ -154,7 +154,7 @@ func TestServersReplaceRollbackWithSocketFailure(t *testing.T) {
 	}
 
 	// By now, failover should be executing; wait for health check to occur
-	time.Sleep(healthCheckDelay) // I hate sleeping in tests, but I can't find a better way to do this
+	time.Sleep(healthCheckDelay + (1 * time.Second)) // I hate sleeping in tests, but I can't find a better way to do this
 
 	// Make sure new server is NOT started
 	resp, err := http.Get("http://" + newServerAddr)
