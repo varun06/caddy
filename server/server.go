@@ -234,7 +234,7 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 					return err
 				}
 				if !pool.AppendCertsFromPEM(caCrt) {
-					return fmt.Errorf("Error loading client certificate '%s': no certificates were successfully parsed", caFile)
+					return fmt.Errorf("error loading client certificate '%s': no certificates were successfully parsed", caFile)
 				}
 			}
 		}
@@ -243,4 +243,9 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 	}
 
 	return nil
+}
+
+func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
+	w.WriteHeader(status)
+	fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
 }

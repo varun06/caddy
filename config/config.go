@@ -98,7 +98,7 @@ func ArrangeBindings(allConfigs []*server.Config) (map[*net.TCPAddr][]*server.Co
 	for _, conf := range allConfigs {
 		newAddr, err := net.ResolveTCPAddr("tcp", conf.Address())
 		if err != nil {
-			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
+			return addresses, errors.New("could not serve " + conf.Address() + " - " + err.Error())
 		}
 
 		// Make sure to compare the string representation of the address,
@@ -128,7 +128,7 @@ func ArrangeBindings(allConfigs []*server.Config) (map[*net.TCPAddr][]*server.Co
 				if configs[0].TLS.Enabled {
 					otherConfigProto = "HTTPS"
 				}
-				return addresses, fmt.Errorf("Configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
+				return addresses, fmt.Errorf("configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
 					configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
 			}
 		}
