@@ -50,19 +50,24 @@ func (vh *VirtualHost) compile(layers []*middleware.Middleware) {
 // like running startup functions or anything else it needs to do.
 func (vh *VirtualHost) Start() error {
 	// Execute startup functions
+	vh.Config.Lock()
 	for _, start := range vh.Config.Startup {
 		err := start()
 		if err != nil {
 			return err
 		}
 	}
+
 	log.Printf("+%s\n", vh.Config.Address())
+	vh.Config.Unlock()
+
 	return nil
 }
 
 // Stop means that vh is being terminated, so the vh cleans up after itself.
 func (vh *VirtualHost) Stop() {
 	// Execute shutdown functions
+	vh.Config.Lock()
 	for _, shutdownFunc := range vh.Config.Shutdown {
 		err := shutdownFunc()
 		if err != nil {
@@ -70,4 +75,5 @@ func (vh *VirtualHost) Stop() {
 		}
 	}
 	log.Printf("-%s\n", vh.Config.Address())
+	vh.Config.Unlock()
 }

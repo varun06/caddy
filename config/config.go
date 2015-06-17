@@ -59,7 +59,10 @@ func Load(filename string, input io.Reader) ([]*server.Config, error) {
 					Dispenser: parse.NewDispenserTokens(filename, tokens),
 				}
 
+				config.Lock()
 				midware, err := dir.setup(controller)
+				config.Unlock()
+
 				if err != nil {
 					return configs, err
 				}

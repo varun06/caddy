@@ -20,17 +20,17 @@ import (
 // static content at a particular address (host and port).
 type Server struct {
 	sync.Mutex
-	*Graceful  `json:"-"`
-	HTTP2      bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	Address    string                  // the actual address for net.Listen to listen on
-	TLS        bool                    // whether this server is serving all HTTPS hosts or not
-	Vhosts     map[string]*VirtualHost // virtual hosts keyed by their address
-	ListenChan chan struct{}           `json:"-"`
+	*Graceful `json:"-"`
+	HTTP2     bool                    // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	Address   string                  // the actual address for net.Listen to listen on
+	TLS       bool                    // whether this server is serving all HTTPS hosts or not
+	Vhosts    map[string]*VirtualHost // virtual hosts keyed by their address
 }
 
 // New creates a new Server which will bind to addr and serve
 // the sites/hosts configured in configs. This function does
-// not start serving.
+// not start serving and does not make the new server graceful
+// (call Start() for that).
 func New(addr string, configs []*Config, tls bool) (*Server, error) {
 	s := &Server{
 		Address: addr,
@@ -38,15 +38,7 @@ func New(addr string, configs []*Config, tls bool) (*Server, error) {
 		Vhosts:  make(map[string]*VirtualHost),
 	}
 
-	// Our server is its own handler
-	s.Graceful = NewGraceful(addr, s)
-
-	// When server shuts down, make sure each virtualhost cleans up.
-	s.Graceful.ShutdownCallback = func() {
-		for _, vh := range s.Vhosts {
-			vh.Stop()
-		}
-	}
+	s.setup()
 
 	for _, conf := range configs {
 		if _, exists := s.Vhosts[conf.Host]; exists {
@@ -67,11 +59,10 @@ func New(addr string, configs []*Config, tls bool) (*Server, error) {
 	return s, nil
 }
 
-// Start starts the server. It blocks until the server quits and shutdown is complete.
+// Start starts the server with graceful shutdown capabilities.
+// It blocks until the server quits and shutdown is complete.
 func (s *Server) Start() error {
-	s.Lock()
-	s.ListenChan = make(chan struct{})
-	s.Unlock()
+	s.setup()
 
 	if s.HTTP2 {
 		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
@@ -79,6 +70,7 @@ func (s *Server) Start() error {
 	}
 
 	// Run startup functions or make other preparations
+	s.Lock()
 	for key, vh := range s.Vhosts {
 		if err := vh.Start(); err != nil {
 			log.Printf("[%s] %s", vh.Config.Address(), err.Error())
@@ -89,14 +81,14 @@ func (s *Server) Start() error {
 	if len(s.Vhosts) == 0 {
 		return fmt.Errorf("no hosts to serve")
 	}
-
-	// signal that the listener should be active momentarily
-	close(s.ListenChan)
+	s.Unlock()
 
 	if s.TLS {
 		var tlsConfigs []TLSConfig
 		for _, vh := range s.Vhosts {
+			vh.Config.Lock()
 			tlsConfigs = append(tlsConfigs, vh.Config.TLS)
+			vh.Config.Unlock()
 		}
 		return ListenAndServeTLSWithSNI(s, tlsConfigs)
 	} else {
@@ -143,6 +135,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.Address)
+	}
+}
+
+// setup prepares the server to start by creating graceful components.
+func (s *Server) setup() {
+	s.Lock()
+	defer s.Unlock()
+
+	// Make s graceful. We can't reuse a Graceful instance (without races). TODO: I bet we could make it work somehow
+	s.Graceful = NewGraceful(s.Address, s) // s is its own handler
+	s.Graceful.ShutdownCallback = func() {
+		// Shut down each vhost
+		for _, vh := range s.Vhosts {
+			vh.Stop()
+		}
 	}
 }
 

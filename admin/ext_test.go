@@ -10,6 +10,7 @@ import (
 )
 
 func TestExtensionsGet(t *testing.T) {
+	defer cleanUp()
 	caddyfile := testAddr + `
 	         ext .html .txt`
 	w, r, p := setUp(t, caddyfile, "GET", "/"+testAddr+"/ext", nil)
@@ -28,6 +29,7 @@ func TestExtensionsGet(t *testing.T) {
 }
 
 func TestExtensionsCreate(t *testing.T) {
+	defer cleanUp()
 	w, r, p := setUp(t, testAddr, "GET", "/"+testAddr+"/ext", strings.NewReader("ext .html"))
 
 	extensionsCreate(w, r, p)
@@ -55,6 +57,7 @@ func TestExtensionsDelete(t *testing.T) {
 }
 
 func TestExtensionsSet(t *testing.T) {
+	defer cleanUp()
 	caddyfile := testAddr + "\next .html"
 	w, r, p := setUp(t, caddyfile, "PUT", "/"+testAddr+"/ext", strings.NewReader(`[".txt",".zip"]`))
 
@@ -77,6 +80,7 @@ func TestExtensionsSet(t *testing.T) {
 }
 
 func TestExtensionsAdd(t *testing.T) {
+	defer cleanUp()
 	caddyfile := testAddr + "\next .html"
 	w, r, p := setUp(t, caddyfile, "POST", "/"+testAddr+"/ext/extensions", strings.NewReader(`[".htm"]`))
 
@@ -99,6 +103,7 @@ func TestExtensionsAdd(t *testing.T) {
 }
 
 func TestExtensionsRemove(t *testing.T) {
+	defer cleanUp()
 	caddyfile := testAddr + "\next .html .htm .txt"
 	w, r, p := setUp(t, caddyfile, "POST", "/"+testAddr+"/ext/extensions", strings.NewReader(`[".htm"]`))
 

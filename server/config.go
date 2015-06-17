@@ -2,16 +2,19 @@ package server
 
 import (
 	"net"
+	"sync"
 
 	"github.com/mholt/caddy/middleware"
 )
 
 // Config configuration for a single server.
 type Config struct {
+	sync.Mutex
+
 	// The hostname or IP on which to serve
 	Host string
 
-	// The host address to bind on - defaults to (virtual) Host if empty
+	// The host address to bind on - defaults to Host if empty
 	BindHost string `json:",omitempty"`
 
 	// The port to listen on
@@ -52,7 +55,7 @@ type Config struct {
 }
 
 // Address returns the host:port of c as a string.
-func (c Config) Address() string {
+func (c *Config) Address() string {
 	if c.BindHost != "" {
 		return net.JoinHostPort(c.BindHost, c.Port)
 	}

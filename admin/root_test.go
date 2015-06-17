@@ -10,6 +10,7 @@ import (
 )
 
 func TestRootSet(t *testing.T) {
+	defer cleanUp()
 	caddyfile := testAddr + `
 	         root /fizz
 	         ext .testing`

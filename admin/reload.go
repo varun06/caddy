@@ -2,7 +2,6 @@ package admin
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -17,7 +16,8 @@ func init() {
 }
 
 // reload reloads the server's configuration from the same config file the
-// process started with.
+// process started with. It blocks long enough to shut down the existing
+// servers.
 func reload(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	if app.ConfigPath == "" {
 		handleError(w, r, http.StatusForbidden, errors.New("no config file to reload"))
@@ -29,14 +29,12 @@ func reload(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		return
 	}
 
-	go func() {
-		defer file.Close()
-		err := ReplaceAllServers(path.Base(app.ConfigPath), file)
-		if err != nil {
-			// client has already left by now, so just log it
-			log.Println(err)
-		}
-	}()
+	defer file.Close()
+	err = ReplaceAllServers(path.Base(app.ConfigPath), file)
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 }

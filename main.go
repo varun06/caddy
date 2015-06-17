@@ -72,7 +72,9 @@ func main() {
 		}
 
 		// Start your engines!
+		app.ServersMutex.Lock()
 		_, err = admin.InitializeWithBindings(addresses, false)
+		app.ServersMutex.Unlock()
 		if err != nil {
 			log.Println(err)
 		}

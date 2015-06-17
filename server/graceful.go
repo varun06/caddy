@@ -70,7 +70,7 @@ type Graceful struct {
 	// stopChanClosed indicates whether the stopChan has been closed.
 	stopChanClosed bool
 
-	// connections holds all connections managed by graceful
+	// connections holds all connections managed by graceful - race detected on this field if re-using a Graceful
 	connections map[net.Conn]struct{}
 
 	// This struct must be locked when modifying stopChan, stopChanClosed, and interrupt fields.
@@ -78,6 +78,7 @@ type Graceful struct {
 }
 
 // NewGraceful creates a server at addr with graceful shutdown capabilities.
+// A Graceful should not be reused after it was stopped.
 func NewGraceful(addr string, h http.Handler) *Graceful {
 	return &Graceful{
 		Server: &http.Server{Addr: addr, Handler: h},

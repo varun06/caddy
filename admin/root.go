@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/mholt/caddy/app"
 )
 
 func init() {
@@ -16,9 +15,6 @@ func init() {
 // rootSet sets the new site root, with "root=<new root>" in the query string.
 func rootSet(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	r.ParseForm()
-
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
 
 	vh := virtualHost(p.ByName("addr"))
 	if vh == nil {

@@ -7,6 +7,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -100,17 +101,26 @@ func init() {
 			if i > 0 {
 				// second interrupt is force-quit
 				os.Exit(1)
+			} else {
+				fmt.Println("\n[INTERRUPT] Shutting down")
 			}
 
-			ServersMutex.Lock()
-			for _, s := range Servers {
-				s.Stop(ShutdownCutoff)
-			}
-			ServersMutex.Unlock()
+			// In case we can't acquire the lock (which would be a bug,
+			// but even so, this is a fail-safe), run this in a separate
+			// goroutine.
+			go func() {
+				ServersMutex.Lock()
+				for _, s := range Servers {
+					s.Lock()
+					s.Stop(ShutdownCutoff)
+					s.Unlock()
+				}
+				ServersMutex.Unlock()
 
-			if APIServer != nil {
-				APIServer.Stop(ShutdownCutoff)
-			}
+				if APIServer != nil {
+					APIServer.Stop(ShutdownCutoff)
+				}
+			}()
 		}
 	}()
 }

@@ -117,6 +117,8 @@ func serverAndVirtualHost(addr string) (*server.Server, *server.VirtualHost, boo
 // host and port information. If either value is nil, the host
 // and port combination could not be found.
 func getServerAndVirtualHost(host, port string) (*server.Server, *server.VirtualHost) {
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
 	for _, s := range app.Servers {
 		_, sPort, err := net.SplitHostPort(s.Address)
 		if err != nil || sPort != port {
@@ -148,14 +150,14 @@ func safeSplitHostPort(s string) (string, string) {
 // even though the error is nil. To make it easier to determine if there was an error, the third
 // return value will be false if there was an error (true if all OK).
 func createMiddleware(r *http.Request, p httprouter.Params, directive string, setupFunc config.SetupFunc) (int, error, bool) {
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
 	// Get the virtualHost we will add the middleware to
 	_, vh, ok := serverAndVirtualHost(p.ByName("addr"))
 	if !ok {
 		return http.StatusNotFound, nil, false
 	}
+
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
 
 	// Make sure the middleware doesn't already exist
 	if _, ok := vh.Config.HandlerMap[directive]; ok {
@@ -198,14 +200,14 @@ func createMiddleware(r *http.Request, p httprouter.Params, directive string, se
 // It returns a status code, server-side error (if any), and true if the action
 // was succesful (false otherwise).
 func deleteMiddleware(p httprouter.Params, directive string) (int, error, bool) {
-	app.ServersMutex.Lock()
-	defer app.ServersMutex.Unlock()
-
 	// Get the virtualHost we will remove the middleware from
 	_, vh, ok := serverAndVirtualHost(p.ByName("addr"))
 	if !ok {
 		return http.StatusNotFound, nil, false
 	}
+
+	app.ServersMutex.Lock()
+	defer app.ServersMutex.Unlock()
 
 	// Get the handler being deleted
 	handler, ok := vh.Config.HandlerMap[directive]
