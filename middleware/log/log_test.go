@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 type erroringMiddleware struct{}
@@ -14,6 +16,8 @@ type erroringMiddleware struct{}
 func (erroringMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return http.StatusNotFound, nil
 }
+func (erroringMiddleware) GetNext() middleware.Handler { return nil }
+func (erroringMiddleware) SetNext(middleware.Handler)  {}
 
 func TestLoggedStatus(t *testing.T) {
 	var f bytes.Buffer

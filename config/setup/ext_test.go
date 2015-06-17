@@ -20,7 +20,7 @@ func TestExt(t *testing.T) {
 	}
 
 	handler := mid(emptyNext)
-	myHandler, ok := handler.(extensions.Ext)
+	myHandler, ok := handler.(*extensions.Ext)
 
 	if !ok {
 		t.Fatalf("Expected handler to be type Ext, got: %#v", handler)
