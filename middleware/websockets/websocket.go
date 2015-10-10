@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
 
 // WebSocket represents a web socket server instance. A WebSocket
@@ -22,9 +22,17 @@ type WebSocket struct {
 func (ws WebSocket) Handle(conn *websocket.Conn) {
 	cmd := exec.Command(ws.Command, ws.Arguments...)
 
-	cmd.Stdin = conn
-	cmd.Stdout = conn
-	cmd.Stderr = conn // TODO: Make this configurable from the Caddyfile
+	msgType, connReader, err := conn.NextReader()
+	if err != nil {
+		panic(err)
+	}
+	connWriter, err := conn.NextWriter(msgType)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stdin = connReader
+	cmd.Stdout = connWriter
+	cmd.Stderr = connWriter // TODO: Make this configurable from the Caddyfile
 
 	metavars, err := ws.buildEnv(cmd.Path)
 	if err != nil {

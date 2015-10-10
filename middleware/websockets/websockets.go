@@ -4,10 +4,11 @@
 package websockets
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/gorilla/websocket"
 	"github.com/mholt/caddy/middleware"
-	"golang.org/x/net/websocket"
 )
 
 type (
@@ -32,21 +33,31 @@ type (
 	}
 )
 
-// ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
-func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for _, sockconfig := range ws.Sockets {
-		if middleware.Path(r.URL.Path).Matches(sockconfig.Path) {
-			socket := WebSocket{
-				Config:  sockconfig,
-				Request: r,
-			}
-			websocket.Handler(socket.Handle).ServeHTTP(w, r)
-			return 0, nil
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
+}
+
+func wshandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := wsupgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Println("Failed to set websocket upgrade: %+v", err)
+		return
+	}
+	defer conn.Close()
+
+	for {
+		messageType, msg, err := conn.ReadMessage()
+		if err != nil {
+			fmt.Println("read error: %+v", err)
+			break
+		}
+		err = conn.WriteMessage(messageType, msg)
+		if err != nil {
+			fmt.Println("write error: %+v", err)
+			break
 		}
 	}
-
-	// Didn't match a websocket path, so pass-thru
-	return ws.Next.ServeHTTP(w, r)
 }
 
 var (
